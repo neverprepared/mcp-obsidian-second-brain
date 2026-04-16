@@ -13,7 +13,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   "mcpServers": {
     "obsidian-second-brain": {
       "command": "npx",
-      "args": ["-y", "github:neverprepared/mcp-obsidian-second-brain"],
+      "args": ["-y", "@neverprepared/mcp-obsidian-second-brain"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/your/obsidian/vault"
       }
@@ -54,7 +54,7 @@ Add to `~/.claude/claude_desktop_config.json` or run:
 ```bash
 claude mcp add obsidian-second-brain \
   -e OBSIDIAN_VAULT_PATH=/path/to/your/obsidian/vault \
-  -- npx -y github:neverprepared/mcp-obsidian-second-brain
+  -- npx -y @neverprepared/mcp-obsidian-second-brain
 ```
 
 ## Configuration

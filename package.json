@@ -1,11 +1,22 @@
 {
-  "name": "mcp-obsidian-second-brain",
+  "name": "@neverprepared/mcp-obsidian-second-brain",
   "version": "0.2.0",
   "description": "MCP server for Obsidian-based second brain memory using PARA methodology",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
     "mcp-obsidian-second-brain": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neverprepared/mcp-obsidian-second-brain.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
