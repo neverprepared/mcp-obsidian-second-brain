@@ -14,7 +14,12 @@ export const searchToolDefinition = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Filter by tags (AND logic)',
+        description: 'Filter by tags',
+      },
+      tag_mode: {
+        type: 'string',
+        enum: ['and', 'or'],
+        description: 'Tag filter logic: "and" (all tags required, default) or "or" (any tag matches)',
       },
       para: {
         type: 'string',
@@ -32,6 +37,10 @@ export const searchToolDefinition = {
         description: 'Filter by freshness based on TTL (default: all)',
       },
       limit: { type: 'number', description: 'Max results (default: 10, max: 50)' },
+      created_after: { type: 'string', description: 'Filter by created date (ISO 8601, inclusive)' },
+      created_before: { type: 'string', description: 'Filter by created date (ISO 8601, inclusive)' },
+      updated_after: { type: 'string', description: 'Filter by updated date (ISO 8601, inclusive)' },
+      updated_before: { type: 'string', description: 'Filter by updated date (ISO 8601, inclusive)' },
     },
   },
 };
@@ -42,10 +51,15 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
     const results = await searchMemories({
       query: input.query,
       tags: input.tags,
+      tag_mode: input.tag_mode,
       para: input.para,
       status: input.status,
       freshness: input.freshness,
       limit: input.limit,
+      created_after: input.created_after,
+      created_before: input.created_before,
+      updated_after: input.updated_after,
+      updated_before: input.updated_before,
     });
 
     if (results.length === 0) {

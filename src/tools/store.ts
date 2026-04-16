@@ -97,11 +97,14 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
 
     await writeMemoryFile(filePath, fileContent);
 
-    // Update index
-    indexEntry(id, { frontmatter, filePath, slug });
+    // Update index (include body for content search cache)
+    indexEntry(id, { frontmatter, filePath, slug, body });
 
     // Auto-link to related memories by shared tags (bidirectional)
-    const linkedSlugs = await autoLinkRelated(slug, filePath, input.tags);
+    const { linked: linkedSlugs, failed: failedLinks } = await autoLinkRelated(slug, filePath, input.tags);
+    if (failedLinks.length > 0) {
+      logger.warn('Some auto-links failed during store', { slug, failed: failedLinks });
+    }
 
     // Append to daily note
     await appendToDaily(`- [[${slug}]] — ${input.title} (${input.para}, ${input.tags.join(', ')})`);

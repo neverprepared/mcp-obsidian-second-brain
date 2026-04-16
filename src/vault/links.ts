@@ -2,8 +2,7 @@ import { readMemoryFile, writeMemoryFile } from './filesystem.js';
 import { getIndex, findBySlug } from './search.js';
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { logger } from '../shared/logger.js';
-
-const MIN_SHARED_TAGS = 2;
+import { CONFIG } from '../config.js';
 
 const WIKI_LINK_RE = /\[\[([^\]]+)\]\]/g;
 
@@ -94,7 +93,7 @@ export function findRelatedByTags(tags: string[], excludeSlug?: string): string[
     if (entry.slug === excludeSlug) continue;
     const entryTags = entry.frontmatter.tags.map((t) => t.toLowerCase());
     const shared = entryTags.filter((t) => tagSet.has(t)).length;
-    if (shared >= MIN_SHARED_TAGS) {
+    if (shared >= CONFIG.MIN_SHARED_TAGS) {
       matches.push({ slug: entry.slug, shared });
     }
   }
@@ -104,22 +103,30 @@ export function findRelatedByTags(tags: string[], excludeSlug?: string): string[
     .map((m) => m.slug);
 }
 
+export interface AutoLinkResult {
+  linked: string[];
+  failed: string[];
+}
+
 /**
  * Auto-link a newly stored memory to related memories (bidirectional).
  * - Adds [[wiki-links]] from the new memory to related ones
  * - Adds backlinks from related memories back to the new one
  * - Updates frontmatter `related` arrays on both sides
  *
- * Fire-and-forget: errors are logged but don't fail the store.
+ * Returns { linked, failed } — errors are logged but don't fail the store.
  */
 export async function autoLinkRelated(
   newSlug: string,
   newFilePath: string,
   tags: string[],
-): Promise<string[]> {
+): Promise<AutoLinkResult> {
+  const linked: string[] = [];
+  const failed: string[] = [];
+
   try {
     const relatedSlugs = findRelatedByTags(tags, newSlug);
-    if (relatedSlugs.length === 0) return [];
+    if (relatedSlugs.length === 0) return { linked: [], failed: [] };
 
     // 1. Update the new memory file: add outgoing links
     const newRaw = await readMemoryFile(newFilePath);
@@ -142,13 +149,19 @@ export async function autoLinkRelated(
     for (const slug of relatedSlugs) {
       try {
         const entry = findBySlug(slug);
-        if (!entry) continue;
+        if (!entry) {
+          failed.push(slug);
+          continue;
+        }
 
         const raw = await readMemoryFile(entry.filePath);
         const parsed = parseMemoryFile(raw);
 
         // Skip if already linked
-        if (parsed.frontmatter.related.includes(newSlug)) continue;
+        if (parsed.frontmatter.related.includes(newSlug)) {
+          linked.push(slug);
+          continue;
+        }
 
         parsed.frontmatter.related.push(newSlug);
         const updatedContent = addRelatedLink(parsed.content, newSlug);
@@ -157,15 +170,79 @@ export async function autoLinkRelated(
 
         // Update in-memory index
         entry.frontmatter.related = parsed.frontmatter.related;
+        entry.body = updatedContent;
+
+        linked.push(slug);
       } catch (err) {
         logger.warn('Failed to add backlink', { slug, newSlug, error: String(err) });
+        failed.push(slug);
       }
     }
 
-    logger.info('Auto-linked related memories', { newSlug, linkedCount: relatedSlugs.length });
-    return relatedSlugs;
+    logger.info('Auto-linked related memories', { newSlug, linkedCount: linked.length, failedCount: failed.length });
   } catch (err) {
     logger.warn('Auto-linking failed', { newSlug, error: String(err) });
-    return [];
   }
+
+  return { linked, failed };
+}
+
+export interface RemoveBacklinksResult {
+  cleaned: string[];
+  failed: string[];
+}
+
+/**
+ * Remove all references to deletedSlug from other memories after a delete.
+ * Cleans both the `related` frontmatter array and [[wiki-links]] in body content.
+ * Best-effort: processes each file independently, failures are collected not thrown.
+ */
+export async function removeBacklinks(deletedSlug: string): Promise<RemoveBacklinksResult> {
+  const index = getIndex();
+  const cleaned: string[] = [];
+  const failed: string[] = [];
+
+  for (const entry of index.values()) {
+    const fm = entry.frontmatter;
+    if (!fm.related.includes(deletedSlug)) continue;
+
+    try {
+      const raw = await readMemoryFile(entry.filePath);
+      const parsed = parseMemoryFile(raw);
+
+      // Remove from related array
+      parsed.frontmatter.related = parsed.frontmatter.related.filter((s) => s !== deletedSlug);
+
+      // Remove [[deletedSlug]] wiki-links from body
+      const wikiLinkPattern = new RegExp(`- \\[\\[${deletedSlug}\\]\\]\\n?`, 'g');
+      const updatedContent = parsed.content.replace(wikiLinkPattern, '');
+
+      await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
+
+      // Update in-memory index
+      entry.frontmatter.related = parsed.frontmatter.related;
+      entry.body = updatedContent;
+
+      cleaned.push(entry.slug);
+    } catch (err) {
+      logger.warn('Failed to remove backlink', { from: entry.slug, deletedSlug, error: String(err) });
+      failed.push(entry.slug);
+    }
+  }
+
+  return { cleaned, failed };
+}
+
+/**
+ * Build a map of slug -> count of incoming links from other memories' `related` arrays.
+ * Used by stats and cleanup tools for orphan detection.
+ */
+export function buildIncomingLinkCount(index: Map<string, { slug: string; frontmatter: { related: string[] } }>): Map<string, number> {
+  const incomingCount = new Map<string, number>();
+  for (const entry of index.values()) {
+    for (const relatedSlug of entry.frontmatter.related) {
+      incomingCount.set(relatedSlug, (incomingCount.get(relatedSlug) ?? 0) + 1);
+    }
+  }
+  return incomingCount;
 }

@@ -120,8 +120,8 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       await writeMemoryFile(newFilePath, fileContent);
     }
 
-    // Update index
-    updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug });
+    // Update index (include body for content search cache)
+    updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug, body: content });
 
     logger.info('Updated memory', { id: fm.id, slug: newSlug });
 

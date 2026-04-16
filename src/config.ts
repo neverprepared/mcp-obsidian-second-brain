@@ -13,6 +13,7 @@ export const CONFIG = {
   MAX_SEARCH_LIMIT: 50,
   DEFAULT_LIST_LIMIT: 20,
   MAX_LIST_LIMIT: 100,
+  MIN_SHARED_TAGS: parseInt(process.env['MIN_SHARED_TAGS'] || '2', 10),
 } as const;
 
 export const DEFAULT_TTL_DAYS: Record<string, number> = {

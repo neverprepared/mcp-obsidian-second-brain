@@ -2,6 +2,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { DeleteInputSchema } from '../schemas/tools.js';
 import { findById, removeFromIndex } from '../vault/search.js';
 import { deleteMemoryFile } from '../vault/filesystem.js';
+import { removeBacklinks } from '../vault/links.js';
 import { logger } from '../shared/logger.js';
 
 export const deleteToolDefinition = {
@@ -30,16 +31,27 @@ export async function handleDelete(args: unknown): Promise<CallToolResult> {
       };
     }
 
+    const deletedSlug = entry.slug;
+    const deletedTitle = entry.frontmatter.title;
+
     await deleteMemoryFile(entry.filePath);
     removeFromIndex(input.id);
 
-    logger.info('Deleted memory', { id: input.id, slug: entry.slug });
+    // Clean up backlinks in other memories
+    const { cleaned, failed } = await removeBacklinks(deletedSlug);
+    if (failed.length > 0) {
+      logger.warn('Some backlinks could not be cleaned after delete', { deletedSlug, failed });
+    }
+
+    logger.info('Deleted memory', { id: input.id, slug: deletedSlug, cleanedBacklinks: cleaned.length });
+
+    const cleanedInfo = cleaned.length > 0 ? `\nCleaned backlinks from: ${cleaned.length} memor${cleaned.length === 1 ? 'y' : 'ies'}` : '';
 
     return {
       content: [
         {
           type: 'text',
-          text: `Deleted memory: "${entry.frontmatter.title}" (${input.id})`,
+          text: `Deleted memory: "${deletedTitle}" (${input.id})${cleanedInfo}`,
         },
       ],
     };

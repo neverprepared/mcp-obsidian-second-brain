@@ -94,6 +94,7 @@ async function createProject(input: z.infer<typeof ProjectInputSchema>): Promise
     confidence: 'high',
     source: 'conversation',
     ttl_days: ttlDays,
+    deadline: input.deadline,
   });
 }
 

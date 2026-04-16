@@ -9,6 +9,8 @@ import { archiveToolDefinition, handleArchive } from './archive.js';
 import { deleteToolDefinition, handleDelete } from './delete.js';
 import { linkToolDefinition, handleLink } from './link.js';
 import { projectToolDefinition, handleProject } from './project.js';
+import { statsToolDefinition, handleStats } from './stats.js';
+import { cleanupToolDefinition, handleCleanup } from './cleanup.js';
 
 export function getToolDefinitions() {
   return [
@@ -21,6 +23,8 @@ export function getToolDefinitions() {
     deleteToolDefinition,
     linkToolDefinition,
     projectToolDefinition,
+    statsToolDefinition,
+    cleanupToolDefinition,
   ];
 }
 
@@ -34,6 +38,8 @@ const handlers: Record<string, (args: unknown) => Promise<CallToolResult>> = {
   memory_delete: handleDelete,
   memory_link: handleLink,
   memory_project: handleProject,
+  memory_stats: handleStats,
+  memory_cleanup: handleCleanup,
 };
 
 export async function handleToolCall(request: CallToolRequest): Promise<CallToolResult> {
