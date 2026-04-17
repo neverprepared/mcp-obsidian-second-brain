@@ -27,13 +27,24 @@ export async function seedTaskFromVault(task_id: string, goal: string): Promise<
   const keywords = extractKeywords(goal);
   if (keywords.length === 0) return 0;
 
-  const query = keywords.join(' ');
-
   try {
-    const results = await searchMemories({ query, limit: 5, freshness: 'fresh' });
+    // Search per-keyword and deduplicate — avoids phrase-match misses
+    const seen = new Set<string>();
+    const results = [];
+    for (const kw of keywords) {
+      const hits = await searchMemories({ query: kw, limit: 5, freshness: 'fresh' });
+      for (const hit of hits) {
+        if (!seen.has(hit.entry.frontmatter.id)) {
+          seen.add(hit.entry.frontmatter.id);
+          results.push(hit);
+        }
+      }
+    }
+    results.sort((a, b) => b.score - a.score);
+    const top = results.slice(0, 5);
 
     let seeded = 0;
-    for (const result of results) {
+    for (const result of top) {
       const fm = result.entry.frontmatter;
       const snippet = result.snippet
         ? `\n\n> ${result.snippet}`
@@ -48,7 +59,7 @@ export async function seedTaskFromVault(task_id: string, goal: string): Promise<
     }
 
     if (seeded > 0) {
-      logger.info('Seeded task from vault', { task_id, seeded, query });
+      logger.info('Seeded task from vault', { task_id, seeded, keywords });
     }
 
     return seeded;
