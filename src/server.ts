@@ -8,6 +8,7 @@ import {
 import { logger } from './shared/logger.js';
 import { ensureVaultStructure } from './para/structure.js';
 import { buildIndex } from './vault/search.js';
+import { initWorkingDb } from './working/db.js';
 import { getToolDefinitions, handleToolCall } from './tools/index.js';
 import { CONFIG } from './config.js';
 
@@ -27,6 +28,9 @@ export async function startServer(): Promise<void> {
 
   // Build in-memory index
   await buildIndex();
+
+  // Initialize session-scoped working memory
+  initWorkingDb();
 
   const server = new Server(
     {

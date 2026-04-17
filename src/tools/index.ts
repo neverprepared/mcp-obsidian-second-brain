@@ -11,6 +11,12 @@ import { linkToolDefinition, handleLink } from './link.js';
 import { projectToolDefinition, handleProject } from './project.js';
 import { statsToolDefinition, handleStats } from './stats.js';
 import { cleanupToolDefinition, handleCleanup } from './cleanup.js';
+import {
+  taskStartToolDefinition, handleTaskStart,
+  taskUpdateToolDefinition, handleTaskUpdate,
+  taskCompleteToolDefinition, handleTaskComplete,
+  taskGetToolDefinition, handleTaskGet,
+} from './task.js';
 
 export function getToolDefinitions() {
   return [
@@ -25,6 +31,10 @@ export function getToolDefinitions() {
     projectToolDefinition,
     statsToolDefinition,
     cleanupToolDefinition,
+    taskStartToolDefinition,
+    taskUpdateToolDefinition,
+    taskCompleteToolDefinition,
+    taskGetToolDefinition,
   ];
 }
 
@@ -40,6 +50,10 @@ const handlers: Record<string, (args: unknown) => Promise<CallToolResult>> = {
   memory_project: handleProject,
   memory_stats: handleStats,
   memory_cleanup: handleCleanup,
+  task_start: handleTaskStart,
+  task_update: handleTaskUpdate,
+  task_complete: handleTaskComplete,
+  task_get: handleTaskGet,
 };
 
 export async function handleToolCall(request: CallToolRequest): Promise<CallToolResult> {

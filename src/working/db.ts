@@ -1,0 +1,275 @@
+import Database from 'better-sqlite3';
+import { nowISO } from '../shared/utils.js';
+import { logger } from '../shared/logger.js';
+
+export type MemoryType = 'semantic' | 'episodic' | 'procedural';
+export type TaskStatus = 'active' | 'completed' | 'failed';
+export type StepStatus = 'pending' | 'active' | 'completed' | 'failed';
+export type Importance = 'low' | 'medium' | 'high';
+
+export interface Task {
+  task_id: string;
+  goal: string;
+  constraints: string | null;
+  plan: string | null;
+  current_step: string | null;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Step {
+  id: number;
+  task_id: string;
+  description: string;
+  status: StepStatus;
+  completed_at: string | null;
+}
+
+export interface Finding {
+  id: number;
+  task_id: string;
+  content: string;
+  importance: Importance;
+  memory_type: MemoryType | null;
+  created_at: string;
+}
+
+export interface Artifact {
+  id: number;
+  task_id: string;
+  name: string;
+  reference: string;
+  created_at: string;
+}
+
+export interface Question {
+  id: number;
+  task_id: string;
+  question: string;
+  resolved: number;
+  resolution: string | null;
+}
+
+export interface TaskState {
+  task: Task;
+  steps: Step[];
+  findings: Finding[];
+  artifacts: Artifact[];
+  questions: Question[];
+}
+
+let db: Database.Database | null = null;
+
+export function initWorkingDb(): void {
+  db = new Database(':memory:');
+
+  db.exec(`
+    CREATE TABLE tasks (
+      task_id    TEXT PRIMARY KEY,
+      goal       TEXT NOT NULL,
+      constraints TEXT,
+      plan       TEXT,
+      current_step TEXT,
+      status     TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE steps (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id      TEXT NOT NULL,
+      description  TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      completed_at TEXT,
+      FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+    );
+
+    CREATE TABLE findings (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id     TEXT NOT NULL,
+      content     TEXT NOT NULL,
+      importance  TEXT NOT NULL DEFAULT 'medium',
+      memory_type TEXT,
+      created_at  TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+    );
+
+    CREATE TABLE artifacts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id    TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      reference  TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+    );
+
+    CREATE TABLE questions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id    TEXT NOT NULL,
+      question   TEXT NOT NULL,
+      resolved   INTEGER NOT NULL DEFAULT 0,
+      resolution TEXT,
+      FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+    );
+  `);
+
+  logger.info('Working memory SQLite initialized');
+}
+
+function requireDb(): Database.Database {
+  if (!db) throw new Error('Working memory DB not initialized — call initWorkingDb() first');
+  return db;
+}
+
+export function generateTaskId(): string {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `task_${timestamp}_${random}`;
+}
+
+// --- Tasks ---
+
+export function createTask(
+  task_id: string,
+  goal: string,
+  constraints?: string[],
+  plan?: string[],
+): void {
+  const now = nowISO();
+  requireDb().prepare(`
+    INSERT INTO tasks (task_id, goal, constraints, plan, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'active', ?, ?)
+  `).run(
+    task_id,
+    goal,
+    constraints ? JSON.stringify(constraints) : null,
+    plan ? JSON.stringify(plan) : null,
+    now,
+    now,
+  );
+}
+
+export function getTask(task_id: string): Task | undefined {
+  return requireDb()
+    .prepare('SELECT * FROM tasks WHERE task_id = ?')
+    .get(task_id) as Task | undefined;
+}
+
+export function listActiveTasks(): Task[] {
+  return requireDb()
+    .prepare("SELECT * FROM tasks WHERE status = 'active' ORDER BY created_at DESC")
+    .all() as Task[];
+}
+
+export function updateTaskMeta(
+  task_id: string,
+  fields: Partial<Pick<Task, 'current_step' | 'plan' | 'status'>>,
+): void {
+  const sets: string[] = ['updated_at = ?'];
+  const values: unknown[] = [nowISO()];
+
+  if (fields.current_step !== undefined) { sets.push('current_step = ?'); values.push(fields.current_step); }
+  if (fields.plan !== undefined) { sets.push('plan = ?'); values.push(JSON.stringify(fields.plan)); }
+  if (fields.status !== undefined) { sets.push('status = ?'); values.push(fields.status); }
+
+  values.push(task_id);
+  requireDb().prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE task_id = ?`).run(...values);
+}
+
+export function deleteTask(task_id: string): void {
+  const d = requireDb();
+  d.prepare('DELETE FROM steps WHERE task_id = ?').run(task_id);
+  d.prepare('DELETE FROM findings WHERE task_id = ?').run(task_id);
+  d.prepare('DELETE FROM artifacts WHERE task_id = ?').run(task_id);
+  d.prepare('DELETE FROM questions WHERE task_id = ?').run(task_id);
+  d.prepare('DELETE FROM tasks WHERE task_id = ?').run(task_id);
+}
+
+// --- Steps ---
+
+export function addStep(task_id: string, description: string): number {
+  const result = requireDb()
+    .prepare('INSERT INTO steps (task_id, description, status) VALUES (?, ?, ?)')
+    .run(task_id, description, 'pending');
+  touchTask(task_id);
+  return Number(result.lastInsertRowid);
+}
+
+export function updateStep(id: number, status: StepStatus): void {
+  const completed_at = (status === 'completed' || status === 'failed') ? nowISO() : null;
+  requireDb()
+    .prepare('UPDATE steps SET status = ?, completed_at = ? WHERE id = ?')
+    .run(status, completed_at, id);
+}
+
+// --- Findings ---
+
+export function addFinding(
+  task_id: string,
+  content: string,
+  importance: Importance = 'medium',
+  memory_type?: MemoryType,
+): number {
+  const result = requireDb()
+    .prepare('INSERT INTO findings (task_id, content, importance, memory_type, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(task_id, content, importance, memory_type ?? null, nowISO());
+  touchTask(task_id);
+  return Number(result.lastInsertRowid);
+}
+
+export function getPromotableFindings(task_id: string): Finding[] {
+  return requireDb()
+    .prepare("SELECT * FROM findings WHERE task_id = ? AND importance IN ('medium', 'high') ORDER BY id")
+    .all(task_id) as Finding[];
+}
+
+// --- Artifacts ---
+
+export function addArtifact(task_id: string, name: string, reference: string): number {
+  const result = requireDb()
+    .prepare('INSERT INTO artifacts (task_id, name, reference, created_at) VALUES (?, ?, ?, ?)')
+    .run(task_id, name, reference, nowISO());
+  touchTask(task_id);
+  return Number(result.lastInsertRowid);
+}
+
+// --- Questions ---
+
+export function addQuestion(task_id: string, question: string): number {
+  const result = requireDb()
+    .prepare('INSERT INTO questions (task_id, question, resolved) VALUES (?, ?, 0)')
+    .run(task_id, question);
+  touchTask(task_id);
+  return Number(result.lastInsertRowid);
+}
+
+export function resolveQuestion(id: number, resolution: string): void {
+  requireDb()
+    .prepare('UPDATE questions SET resolved = 1, resolution = ? WHERE id = ?')
+    .run(resolution, id);
+}
+
+// --- Full state ---
+
+export function getTaskState(task_id: string): TaskState | undefined {
+  const task = getTask(task_id);
+  if (!task) return undefined;
+
+  const d = requireDb();
+  return {
+    task,
+    steps: d.prepare('SELECT * FROM steps WHERE task_id = ? ORDER BY id').all(task_id) as Step[],
+    findings: d.prepare('SELECT * FROM findings WHERE task_id = ? ORDER BY id').all(task_id) as Finding[],
+    artifacts: d.prepare('SELECT * FROM artifacts WHERE task_id = ? ORDER BY id').all(task_id) as Artifact[],
+    questions: d.prepare('SELECT * FROM questions WHERE task_id = ? ORDER BY id').all(task_id) as Question[],
+  };
+}
+
+// --- Internal ---
+
+function touchTask(task_id: string): void {
+  requireDb()
+    .prepare('UPDATE tasks SET updated_at = ? WHERE task_id = ?')
+    .run(nowISO(), task_id);
+}
