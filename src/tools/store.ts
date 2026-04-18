@@ -10,6 +10,8 @@ import { buildRelatedSection, autoLinkRelated } from '../vault/links.js';
 import { generateMemoryId, nowISO } from '../shared/utils.js';
 import { paraFolderFromCategory, CONFIG } from '../config.js';
 import { logger } from '../shared/logger.js';
+import { embedText, buildEmbedText } from '../vault/embeddings.js';
+import { upsertVector } from '../vault/vector-index.js';
 import path from 'node:path';
 
 export const storeToolDefinition = {
@@ -100,6 +102,11 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
 
     // Update index (include body for content search cache)
     indexEntry(id, { frontmatter, filePath, slug, body });
+
+    // Embed and index for vector search (fire-and-forget)
+    void embedText(buildEmbedText(input.title, input.tags, input.content)).then((embedding) => {
+      if (embedding) upsertVector(id, embedding);
+    });
 
     // Auto-link to related memories by shared tags (bidirectional)
     const { linked: linkedSlugs, failed: failedLinks } = await autoLinkRelated(slug, filePath, input.tags);

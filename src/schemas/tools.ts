@@ -30,6 +30,9 @@ export const RecallInputSchema = z.object({
 );
 export type RecallInput = z.infer<typeof RecallInputSchema>;
 
+export const SearchModeSchema = z.enum(['auto', 'keyword', 'vector']).default('auto');
+export type SearchMode = z.infer<typeof SearchModeSchema>;
+
 export const SearchInputSchema = z.object({
   query: z.string().optional(),
   tags: z.array(z.string()).optional(),
@@ -38,6 +41,7 @@ export const SearchInputSchema = z.object({
   status: StatusSchema.optional(),
   freshness: FreshnessFilterSchema.default('all'),
   limit: z.number().min(1).max(50).default(10),
+  search_mode: SearchModeSchema,
   created_after: z.string().optional(),
   created_before: z.string().optional(),
   updated_after: z.string().optional(),

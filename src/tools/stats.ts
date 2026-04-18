@@ -4,6 +4,7 @@ import { getIndex } from '../vault/search.js';
 import { buildIncomingLinkCount } from '../vault/links.js';
 import { isStale } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
+import { getEmbeddingStats, isVectorIndexReady } from '../vault/vector-index.js';
 
 export const statsToolDefinition = {
   name: 'memory_stats',
@@ -58,6 +59,14 @@ export async function handleStats(_args: unknown): Promise<CallToolResult> {
       .slice(0, 10)
       .map(([tag, count]) => `${tag} (${count})`);
 
+    const embeddingInfo = isVectorIndexReady()
+      ? (() => {
+          const { embedded, total: embTotal } = getEmbeddingStats();
+          const pct = embTotal > 0 ? Math.round((embedded / embTotal) * 100) : 0;
+          return `- Vector index: ${embedded}/${embTotal} embedded (${pct}%)`;
+        })()
+      : '- Vector index: disabled (Ollama not available)';
+
     const text = [
       `## Vault Health Summary`,
       ``,
@@ -77,6 +86,7 @@ export async function handleStats(_args: unknown): Promise<CallToolResult> {
       `### Health Indicators`,
       `- Stale memories: ${staleCount}`,
       `- Orphaned memories (no links): ${orphanCount}`,
+      embeddingInfo,
       ``,
       `### Top Tags`,
       topTags.length > 0 ? topTags.join(', ') : 'none',

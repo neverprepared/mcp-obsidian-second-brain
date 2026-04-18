@@ -3,6 +3,8 @@ import { listAllMemoryFiles, readMemoryFile, writeMemoryFile } from './filesyste
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { nowISO, isStale } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
+import { embedText } from './embeddings.js';
+import { isVectorIndexReady, searchVectors } from './vector-index.js';
 
 export interface IndexEntry {
   frontmatter: Frontmatter;
@@ -113,6 +115,7 @@ export interface SearchOptions extends DateFilters {
   status?: Status;
   freshness?: 'all' | 'fresh' | 'stale';
   limit: number;
+  search_mode?: 'auto' | 'keyword' | 'vector';
 }
 
 export interface SearchResult {
@@ -155,55 +158,110 @@ export function passesFilters(entry: IndexEntry, options: Omit<SearchOptions, 'q
   return true;
 }
 
+/** Score an entry against a keyword query. Returns 0 if no match. */
+function scoreKeyword(entry: IndexEntry, query: string): { score: number; snippet?: string } {
+  const fm = entry.frontmatter;
+  const queryLower = query.toLowerCase();
+  let score = 0;
+  let snippet: string | undefined;
+
+  if (fm.title.toLowerCase().includes(queryLower)) score += 10;
+  if (fm.tags.some((t) => t.toLowerCase().includes(queryLower))) score += 5;
+
+  const bodyText = entry.body ?? '';
+  const bodyLower = bodyText.toLowerCase();
+  const idx = bodyLower.indexOf(queryLower);
+  if (idx !== -1) {
+    score += 1;
+    const start = Math.max(0, idx - 50);
+    const end = Math.min(bodyText.length, idx + query.length + 50);
+    snippet =
+      (start > 0 ? '...' : '') +
+      bodyText.slice(start, end).trim() +
+      (end < bodyText.length ? '...' : '');
+  }
+
+  return { score, snippet };
+}
+
 export async function searchMemories(options: SearchOptions): Promise<SearchResult[]> {
+  const mode = options.search_mode ?? 'auto';
+  const useVector =
+    mode !== 'keyword' &&
+    Boolean(options.query) &&
+    isVectorIndexReady();
+
+  if (useVector && options.query) {
+    return hybridSearch(options, options.query);
+  }
+  return keywordSearch(options);
+}
+
+async function hybridSearch(options: SearchOptions, query: string): Promise<SearchResult[]> {
+  const queryEmbedding = await embedText(query);
+  if (!queryEmbedding) return keywordSearch(options);
+
+  const vectorHits = searchVectors(queryEmbedding, Math.min(options.limit * 5, 200));
+  const vectorMap = new Map(vectorHits.map((r) => [r.id, r.distance]));
+
+  const MAX_KEYWORD = 16;
+  const candidates: SearchResult[] = [];
+
+  for (const entry of memoryIndex.values()) {
+    if (!passesFilters(entry, options)) continue;
+
+    const id = entry.frontmatter.id;
+    const { score: rawKey, snippet } = scoreKeyword(entry, query);
+    const distance = vectorMap.get(id);
+
+    if (rawKey === 0 && distance === undefined) continue;
+
+    const vectorSim = distance !== undefined ? Math.max(0, 1 - distance) : 0;
+    const normKey = rawKey / MAX_KEYWORD;
+
+    let hybridScore: number;
+    if (distance !== undefined && rawKey > 0) {
+      hybridScore = 0.6 * vectorSim + 0.4 * normKey;
+    } else if (distance !== undefined) {
+      hybridScore = 0.6 * vectorSim;
+    } else {
+      hybridScore = 0.4 * normKey;
+    }
+
+    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
+    candidates.push({ entry, score: Math.round(hybridScore * 1000) / 1000, snippet, stale });
+  }
+
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated);
+  });
+
+  return candidates.slice(0, options.limit);
+}
+
+function keywordSearch(options: SearchOptions): SearchResult[] {
   const results: SearchResult[] = [];
 
   for (const entry of memoryIndex.values()) {
-    const fm = entry.frontmatter;
-
     if (!passesFilters(entry, options)) continue;
 
-    const entryStale = isStale(fm.updated, fm.ttl_days, fm.para);
+    const entryStale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
     let score = 0;
     let snippet: string | undefined;
 
     if (options.query) {
-      const queryLower = options.query.toLowerCase();
-
-      // Title match
-      if (fm.title.toLowerCase().includes(queryLower)) {
-        score += 10;
-      }
-
-      // Tag match
-      if (fm.tags.some((t) => t.toLowerCase().includes(queryLower))) {
-        score += 5;
-      }
-
-      // Content match — use cached body if available
-      const bodyText = entry.body ?? '';
-      const bodyLower = bodyText.toLowerCase();
-      const idx = bodyLower.indexOf(queryLower);
-      if (idx !== -1) {
-        score += 1;
-        const start = Math.max(0, idx - 50);
-        const end = Math.min(bodyText.length, idx + options.query.length + 50);
-        snippet =
-          (start > 0 ? '...' : '') +
-          bodyText.slice(start, end).trim() +
-          (end < bodyText.length ? '...' : '');
-      }
-
-      // Skip if no match at all
+      const result = scoreKeyword(entry, options.query);
+      score = result.score;
+      snippet = result.snippet;
       if (score === 0) continue;
     } else {
-      score = 1; // All pass when no query
+      score = 1;
     }
 
     results.push({ entry, score, snippet, stale: entryStale });
   }
 
-  // Sort by score descending, then by updated descending
   results.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     return b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated);

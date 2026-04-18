@@ -9,6 +9,7 @@ import { logger } from './shared/logger.js';
 import { ensureVaultStructure } from './para/structure.js';
 import { buildIndex } from './vault/search.js';
 import { initWorkingDb } from './working/db.js';
+import { initVectorIndex, syncVectorIndex } from './vault/vector-index.js';
 import { getToolDefinitions, handleToolCall } from './tools/index.js';
 import { CONFIG } from './config.js';
 
@@ -31,6 +32,10 @@ export async function startServer(): Promise<void> {
 
   // Initialize session-scoped working memory
   initWorkingDb();
+
+  // Initialize vector index (gracefully disabled if sqlite-vec unavailable)
+  await initVectorIndex();
+  syncVectorIndex(); // background sync — non-blocking
 
   const server = new Server(
     {

@@ -8,6 +8,8 @@ import { slugFromTitle, deduplicateSlug } from '../vault/naming.js';
 import { paraFolderFromCategory, CONFIG } from '../config.js';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
+import { embedText, buildEmbedText } from '../vault/embeddings.js';
+import { upsertVector } from '../vault/vector-index.js';
 import path from 'node:path';
 
 export const updateToolDefinition = {
@@ -123,6 +125,13 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
 
     // Update index (include body for content search cache)
     updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug, body: content });
+
+    // Re-embed if title or content changed (fire-and-forget)
+    if (input.title !== undefined || input.content !== undefined) {
+      void embedText(buildEmbedText(fm.title, fm.tags, content)).then((embedding) => {
+        if (embedding) upsertVector(fm.id, embedding);
+      });
+    }
 
     logger.info('Updated memory', { id: fm.id, slug: newSlug });
 
