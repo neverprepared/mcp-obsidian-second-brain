@@ -22,6 +22,10 @@ export function todayDateString(): string {
   return new Date().toISOString().split('T')[0]!;
 }
 
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function isStale(updated: string, ttlDays: number | undefined, para: string): boolean {
   const ttl = ttlDays ?? DEFAULT_TTL_DAYS[para] ?? 180;
   const updatedMs = new Date(updated).getTime();

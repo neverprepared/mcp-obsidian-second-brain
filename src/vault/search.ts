@@ -13,10 +13,12 @@ export interface IndexEntry {
 
 let memoryIndex: Map<string, IndexEntry> = new Map();
 let slugIndex: Map<string, string> = new Map(); // slug -> id
+let titleIndex: Map<string, string> = new Map(); // lowercase title -> id
 
 export async function buildIndex(): Promise<void> {
   const newIndex = new Map<string, IndexEntry>();
   const newSlugIndex = new Map<string, string>();
+  const newTitleIndex = new Map<string, string>();
   const files = await listAllMemoryFiles();
 
   for (const entry of files) {
@@ -31,6 +33,7 @@ export async function buildIndex(): Promise<void> {
         body: parsed.content,
       });
       newSlugIndex.set(entry.slug, id);
+      newTitleIndex.set(parsed.frontmatter.title.toLowerCase(), id);
     } catch (err) {
       logger.warn('Failed to index memory file', {
         path: entry.filePath,
@@ -41,6 +44,7 @@ export async function buildIndex(): Promise<void> {
 
   memoryIndex = newIndex;
   slugIndex = newSlugIndex;
+  titleIndex = newTitleIndex;
   logger.info('Memory index built', { count: newIndex.size });
 }
 
@@ -49,19 +53,24 @@ export function getIndex(): Map<string, IndexEntry> {
 }
 
 export function indexEntry(id: string, entry: IndexEntry): void {
-  // Clean up old slug from reverse index if slug changed
+  // Clean up old slug/title from reverse indexes if changed
   const existing = memoryIndex.get(id);
-  if (existing && existing.slug !== entry.slug) {
-    slugIndex.delete(existing.slug);
+  if (existing) {
+    if (existing.slug !== entry.slug) slugIndex.delete(existing.slug);
+    if (existing.frontmatter.title !== entry.frontmatter.title) {
+      titleIndex.delete(existing.frontmatter.title.toLowerCase());
+    }
   }
   memoryIndex.set(id, entry);
   slugIndex.set(entry.slug, id);
+  titleIndex.set(entry.frontmatter.title.toLowerCase(), id);
 }
 
 export function removeFromIndex(id: string): void {
   const entry = memoryIndex.get(id);
   if (entry) {
     slugIndex.delete(entry.slug);
+    titleIndex.delete(entry.frontmatter.title.toLowerCase());
   }
   memoryIndex.delete(id);
 }
@@ -72,12 +81,10 @@ export function findById(id: string): IndexEntry | undefined {
 
 export function findByTitle(title: string): IndexEntry | undefined {
   const lower = title.toLowerCase();
-  for (const entry of memoryIndex.values()) {
-    if (entry.frontmatter.title.toLowerCase() === lower) {
-      return entry;
-    }
-  }
-  // Partial match fallback
+  // O(1) exact match via title index
+  const exactId = titleIndex.get(lower);
+  if (exactId) return memoryIndex.get(exactId);
+  // O(n) partial match fallback
   for (const entry of memoryIndex.values()) {
     if (entry.frontmatter.title.toLowerCase().includes(lower)) {
       return entry;

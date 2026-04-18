@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ListInputSchema } from '../schemas/tools.js';
 import { getIndex } from '../vault/search.js';
@@ -110,7 +111,7 @@ export async function handleList(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error listing memories: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error listing memories: ${formatError(error)}`,
         },
       ],
       isError: true,

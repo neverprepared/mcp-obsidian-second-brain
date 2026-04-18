@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   generateTaskId,
@@ -13,12 +14,16 @@ import {
   addQuestion,
   resolveQuestion,
   listActiveTasks,
-  type Importance,
-  type MemoryType,
   type StepStatus,
 } from '../working/db.js';
 import { seedTaskFromVault } from '../working/retrieval.js';
 import { promoteTaskToVault } from '../working/promotion.js';
+import {
+  TaskStartInputSchema,
+  TaskUpdateInputSchema,
+  TaskCompleteInputSchema,
+  TaskGetInputSchema,
+} from '../schemas/tools.js';
 import { logger } from '../shared/logger.js';
 
 // --- Tool definitions ---
@@ -124,10 +129,7 @@ export const taskGetToolDefinition = {
 
 export async function handleTaskStart(args: unknown): Promise<CallToolResult> {
   try {
-    const input = args as { goal: string; constraints?: string[]; plan?: string[] };
-    if (!input.goal || typeof input.goal !== 'string') {
-      return { content: [{ type: 'text', text: 'goal is required' }], isError: true };
-    }
+    const input = TaskStartInputSchema.parse(args);
 
     const task_id = generateTaskId();
     createTask(task_id, input.goal, input.constraints, input.plan);
@@ -158,23 +160,13 @@ export async function handleTaskStart(args: unknown): Promise<CallToolResult> {
     };
   } catch (error) {
     logger.error('task_start failed', { error: String(error) });
-    return { content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }], isError: true };
+    return { content: [{ type: 'text', text: `Error: ${formatError(error)}` }], isError: true };
   }
 }
 
 export async function handleTaskUpdate(args: unknown): Promise<CallToolResult> {
   try {
-    const input = args as {
-      task_id: string;
-      current_step?: string;
-      add_finding?: { content: string; importance?: Importance; memory_type?: MemoryType };
-      add_step?: string;
-      complete_step?: number;
-      fail_step?: number;
-      add_artifact?: { name: string; reference: string };
-      add_question?: string;
-      resolve_question?: { id: number; resolution: string };
-    };
+    const input = TaskUpdateInputSchema.parse(args);
 
     const task = getTask(input.task_id);
     if (!task) {
@@ -235,13 +227,13 @@ export async function handleTaskUpdate(args: unknown): Promise<CallToolResult> {
     };
   } catch (error) {
     logger.error('task_update failed', { error: String(error) });
-    return { content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }], isError: true };
+    return { content: [{ type: 'text', text: `Error: ${formatError(error)}` }], isError: true };
   }
 }
 
 export async function handleTaskComplete(args: unknown): Promise<CallToolResult> {
   try {
-    const input = args as { task_id: string; final_finding?: string };
+    const input = TaskCompleteInputSchema.parse(args);
 
     const state = getTaskState(input.task_id);
     if (!state) {
@@ -278,13 +270,13 @@ export async function handleTaskComplete(args: unknown): Promise<CallToolResult>
     };
   } catch (error) {
     logger.error('task_complete failed', { error: String(error) });
-    return { content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }], isError: true };
+    return { content: [{ type: 'text', text: `Error: ${formatError(error)}` }], isError: true };
   }
 }
 
 export async function handleTaskGet(args: unknown): Promise<CallToolResult> {
   try {
-    const input = args as { task_id?: string };
+    const input = TaskGetInputSchema.parse(args);
 
     if (!input.task_id) {
       const tasks = listActiveTasks();
@@ -341,6 +333,6 @@ export async function handleTaskGet(args: unknown): Promise<CallToolResult> {
     return { content: [{ type: 'text', text: lines.filter((l) => l !== null).join('\n') }] };
   } catch (error) {
     logger.error('task_get failed', { error: String(error) });
-    return { content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }], isError: true };
+    return { content: [{ type: 'text', text: `Error: ${formatError(error)}` }], isError: true };
   }
 }

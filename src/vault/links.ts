@@ -2,6 +2,7 @@ import { readMemoryFile, writeMemoryFile } from './filesystem.js';
 import { getIndex, findBySlug } from './search.js';
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { logger } from '../shared/logger.js';
+import { escapeRegex } from '../shared/utils.js';
 import { CONFIG } from '../config.js';
 
 const WIKI_LINK_RE = /\[\[([^\]]+)\]\]/g;
@@ -145,13 +146,13 @@ export async function autoLinkRelated(
 
     await writeMemoryFile(newFilePath, serializeMemory(newParsed.frontmatter, newContent));
 
-    // 2. Update each related memory: add backlink to the new memory
-    for (const slug of relatedSlugs) {
+    // 2. Update each related memory: add backlink to the new memory (parallel writes)
+    await Promise.all(relatedSlugs.map(async (slug) => {
       try {
         const entry = findBySlug(slug);
         if (!entry) {
           failed.push(slug);
-          continue;
+          return;
         }
 
         const raw = await readMemoryFile(entry.filePath);
@@ -160,7 +161,7 @@ export async function autoLinkRelated(
         // Skip if already linked
         if (parsed.frontmatter.related.includes(newSlug)) {
           linked.push(slug);
-          continue;
+          return;
         }
 
         parsed.frontmatter.related.push(newSlug);
@@ -177,7 +178,7 @@ export async function autoLinkRelated(
         logger.warn('Failed to add backlink', { slug, newSlug, error: String(err) });
         failed.push(slug);
       }
-    }
+    }));
 
     logger.info('Auto-linked related memories', { newSlug, linkedCount: linked.length, failedCount: failed.length });
   } catch (err) {
@@ -214,7 +215,7 @@ export async function removeBacklinks(deletedSlug: string): Promise<RemoveBackli
       parsed.frontmatter.related = parsed.frontmatter.related.filter((s) => s !== deletedSlug);
 
       // Remove [[deletedSlug]] wiki-links from body
-      const wikiLinkPattern = new RegExp(`- \\[\\[${deletedSlug}\\]\\]\\n?`, 'g');
+      const wikiLinkPattern = new RegExp(`- \\[\\[${escapeRegex(deletedSlug)}\\]\\]\\n?`, 'g');
       const updatedContent = parsed.content.replace(wikiLinkPattern, '');
 
       await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));

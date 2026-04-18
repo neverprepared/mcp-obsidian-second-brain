@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { RecallInputSchema } from '../schemas/tools.js';
 import { findById, findByTitle, updateLastAccessed } from '../vault/search.js';
@@ -82,7 +83,7 @@ export async function handleRecall(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error recalling memory: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error recalling memory: ${formatError(error)}`,
         },
       ],
       isError: true,

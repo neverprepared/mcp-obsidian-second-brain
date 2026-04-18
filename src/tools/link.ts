@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { LinkInputSchema } from '../schemas/tools.js';
 import { findById, indexEntry as updateIndex } from '../vault/search.js';
@@ -120,7 +121,7 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error linking memories: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error linking memories: ${formatError(error)}`,
         },
       ],
       isError: true,

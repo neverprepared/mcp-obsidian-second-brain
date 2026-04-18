@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { UpdateInputSchema } from '../schemas/tools.js';
 import { findById, indexEntry as updateIndex } from '../vault/search.js';
@@ -139,7 +140,7 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error updating memory: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error updating memory: ${formatError(error)}`,
         },
       ],
       isError: true,

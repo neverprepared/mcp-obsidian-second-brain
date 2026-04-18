@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { SearchInputSchema } from '../schemas/tools.js';
 import { searchMemories, updateLastAccessed } from '../vault/search.js';
@@ -99,7 +100,7 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error searching memories: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error searching memories: ${formatError(error)}`,
         },
       ],
       isError: true,

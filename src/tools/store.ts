@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { StoreInputSchema } from '../schemas/tools.js';
 import type { Frontmatter } from '../schemas/frontmatter.js';
@@ -129,7 +130,7 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error storing memory: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error storing memory: ${formatError(error)}`,
         },
       ],
       isError: true,

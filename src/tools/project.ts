@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { getIndex } from '../vault/search.js';
@@ -175,7 +176,7 @@ export async function handleProject(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error: ${formatError(error)}`,
         },
       ],
       isError: true,

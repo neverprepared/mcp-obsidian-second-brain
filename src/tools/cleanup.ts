@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CleanupInputSchema } from '../schemas/tools.js';
 import { getIndex } from '../vault/search.js';
@@ -103,7 +104,8 @@ export async function handleCleanup(args: unknown): Promise<CallToolResult> {
             succeeded++;
           }
         } else if (input.action === 'delete') {
-          const result = await handleDelete({ id: candidate.frontmatter.id, confirm: true });
+          // confirm:true is safe here — already enforced by CleanupInputSchema refine above
+          const result = await handleDelete({ id: candidate.frontmatter.id, confirm: input.confirm });
           if (result.isError) {
             failed++;
             failures.push(`${candidate.frontmatter.id}: ${result.content[0]?.type === 'text' ? result.content[0].text : 'unknown error'}`);
@@ -130,7 +132,7 @@ export async function handleCleanup(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error running cleanup: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error running cleanup: ${formatError(error)}`,
         },
       ],
       isError: true,

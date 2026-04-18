@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { getIndex } from '../vault/search.js';
 import { buildIncomingLinkCount } from '../vault/links.js';
@@ -88,7 +89,7 @@ export async function handleStats(_args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error getting vault stats: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error getting vault stats: ${formatError(error)}`,
         },
       ],
       isError: true,

@@ -1,3 +1,4 @@
+import { formatError } from '../shared/errors.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArchiveInputSchema } from '../schemas/tools.js';
 import { handleUpdate } from './update.js';
@@ -30,7 +31,7 @@ export async function handleArchive(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Error archiving memory: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error archiving memory: ${formatError(error)}`,
         },
       ],
       isError: true,
