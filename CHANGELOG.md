@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.3.1...v0.4.0) (2026-04-18)
+
+
+### Features
+
+* semantic vector search via Ollama + sqlite-vec ([21a37ef](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/21a37ef51b1a271ee7ea244b473e8475b98b55ab))
+
+
+### Bug Fixes
+
+* security hardening, input validation, and performance improvements ([079e2c0](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/079e2c0688c7eebd1c52bae5414212193124d5a9))
+
 ## [0.3.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.3.0...v0.3.1) (2026-04-17)
 
 
