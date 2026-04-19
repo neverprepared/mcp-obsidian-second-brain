@@ -4,3 +4,5 @@ dist/
 *.tsbuildinfo
 coverage/
 tmp/
+.pkg-stage/
+packages/

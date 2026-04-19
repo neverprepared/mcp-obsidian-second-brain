@@ -1,0 +1,2 @@
+#!/bin/bash
+exec node /opt/mcp-obsidian-second-brain/dist/index.js "$@"
