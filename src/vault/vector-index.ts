@@ -6,6 +6,7 @@ import { CONFIG } from '../config.js';
 import { getIndex } from './search.js';
 import { embedBatch, buildEmbedText, isEmbeddingAvailable } from './embeddings.js';
 import { logger } from '../shared/logger.js';
+import { initFts } from './fts-index.js';
 
 let vecDb: Database.Database | null = null;
 
@@ -29,6 +30,9 @@ export async function initVectorIndex(): Promise<void> {
         updated   TEXT NOT NULL
       );
     `);
+
+    // Initialize FTS5 in the same database
+    initFts(vecDb);
 
     logger.info('Vector index initialized', { path: dbPath });
   } catch (err) {

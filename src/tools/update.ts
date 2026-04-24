@@ -126,8 +126,8 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
     // Update index (include body for content search cache)
     updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug, body: content });
 
-    // Re-embed if title or content changed (fire-and-forget)
-    if (input.title !== undefined || input.content !== undefined) {
+    // Re-embed if title, content, or tags changed (fire-and-forget)
+    if (input.title !== undefined || input.content !== undefined || input.tags !== undefined || input.add_tags !== undefined) {
       void embedText(buildEmbedText(fm.title, fm.tags, content)).then((embedding) => {
         if (embedding) upsertVector(fm.id, embedding);
       });

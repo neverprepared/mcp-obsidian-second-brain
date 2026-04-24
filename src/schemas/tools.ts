@@ -145,6 +145,17 @@ export const TaskGetInputSchema = z.object({
 });
 export type TaskGetInput = z.infer<typeof TaskGetInputSchema>;
 
+export const TimelineInputSchema = z.object({
+  after: z.string().optional().describe('ISO date — only show activity after this date'),
+  before: z.string().optional().describe('ISO date — only show activity before this date'),
+  activity: z.enum(['created', 'updated', 'accessed']).default('updated').describe('Which timestamp to use for ordering'),
+  para: ParaCategorySchema.optional(),
+  tags: z.array(z.string()).optional(),
+  group_by: z.enum(['day', 'week', 'none']).default('day'),
+  limit: z.number().min(1).max(100).default(30),
+});
+export type TimelineInput = z.infer<typeof TimelineInputSchema>;
+
 export const CleanupInputSchema = z.object({
   action: z.enum(['list', 'archive', 'delete']).default('list'),
   target: z.enum(['stale', 'archived', 'orphan']).default('stale'),

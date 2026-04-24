@@ -5,6 +5,7 @@ import { nowISO, isStale } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 import { embedText } from './embeddings.js';
 import { isVectorIndexReady, searchVectors } from './vector-index.js';
+import { isFtsReady, rebuildFts, searchFts, upsertFts, deleteFts } from './fts-index.js';
 
 export interface IndexEntry {
   frontmatter: Frontmatter;
@@ -47,6 +48,18 @@ export async function buildIndex(): Promise<void> {
   memoryIndex = newIndex;
   slugIndex = newSlugIndex;
   titleIndex = newTitleIndex;
+
+  // Populate FTS5 index from loaded entries
+  if (isFtsReady()) {
+    const ftsEntries = [...newIndex.values()].map((e) => ({
+      id: e.frontmatter.id,
+      title: e.frontmatter.title,
+      tags: e.frontmatter.tags,
+      body: e.body ?? '',
+    }));
+    rebuildFts(ftsEntries);
+  }
+
   logger.info('Memory index built', { count: newIndex.size });
 }
 
@@ -66,6 +79,9 @@ export function indexEntry(id: string, entry: IndexEntry): void {
   memoryIndex.set(id, entry);
   slugIndex.set(entry.slug, id);
   titleIndex.set(entry.frontmatter.title.toLowerCase(), id);
+
+  // Keep FTS in sync
+  upsertFts(id, entry.frontmatter.title, entry.frontmatter.tags, entry.body ?? '');
 }
 
 export function removeFromIndex(id: string): void {
@@ -75,6 +91,7 @@ export function removeFromIndex(id: string): void {
     titleIndex.delete(entry.frontmatter.title.toLowerCase());
   }
   memoryIndex.delete(id);
+  deleteFts(id);
 }
 
 export function findById(id: string): IndexEntry | undefined {
@@ -204,19 +221,40 @@ async function hybridSearch(options: SearchOptions, query: string): Promise<Sear
   const vectorHits = searchVectors(queryEmbedding, Math.min(options.limit * 5, 200));
   const vectorMap = new Map(vectorHits.map((r) => [r.id, r.distance]));
 
-  const MAX_KEYWORD = 16;
+  // Use FTS5 for keyword scoring when available
+  const ftsHits = isFtsReady() ? searchFts(query, options.limit * 5) : [];
+  const ftsMap = new Map(ftsHits.map((r) => [r.id, { rank: r.rank, snippet: r.snippet }]));
+
   const candidates: SearchResult[] = [];
 
   for (const entry of memoryIndex.values()) {
     if (!passesFilters(entry, options)) continue;
 
     const id = entry.frontmatter.id;
-    const { score: rawKey, snippet } = scoreKeyword(entry, query);
     const distance = vectorMap.get(id);
+    const ftsHit = ftsMap.get(id);
+
+    // Fall back to legacy scoring if FTS unavailable
+    let rawKey: number;
+    let snippet: string | undefined;
+    if (ftsHit) {
+      rawKey = ftsHit.rank;
+      snippet = ftsHit.snippet || undefined;
+    } else if (ftsHits.length === 0) {
+      // No FTS available, use legacy scorer
+      const legacy = scoreKeyword(entry, query);
+      rawKey = legacy.score;
+      snippet = legacy.snippet;
+    } else {
+      // FTS available but this entry didn't match
+      rawKey = 0;
+    }
 
     if (rawKey === 0 && distance === undefined) continue;
 
     const vectorSim = distance !== undefined ? Math.max(0, 1 - distance) : 0;
+    // Normalize keyword score: FTS rank can vary widely, cap at reasonable max
+    const MAX_KEYWORD = ftsHits.length > 0 ? Math.max(1, ...ftsHits.map((h) => h.rank)) : 16;
     const normKey = rawKey / MAX_KEYWORD;
 
     let hybridScore: number;
@@ -241,6 +279,12 @@ async function hybridSearch(options: SearchOptions, query: string): Promise<Sear
 }
 
 function keywordSearch(options: SearchOptions): SearchResult[] {
+  // When FTS is available and a query is provided, use FTS5 for scoring
+  if (options.query && isFtsReady()) {
+    return ftsKeywordSearch(options, options.query);
+  }
+
+  // Fallback: O(n) in-memory scan
   const results: SearchResult[] = [];
 
   for (const entry of memoryIndex.values()) {
@@ -268,6 +312,34 @@ function keywordSearch(options: SearchOptions): SearchResult[] {
   });
 
   return results.slice(0, options.limit);
+}
+
+/**
+ * FTS5-backed keyword search. Uses BM25 ranking from SQLite FTS5,
+ * then applies in-memory filters (PARA, tags, status, freshness, dates).
+ */
+function ftsKeywordSearch(options: SearchOptions, query: string): SearchResult[] {
+  // Fetch more than limit to allow for post-filtering
+  const ftsHits = searchFts(query, options.limit * 5);
+  const results: SearchResult[] = [];
+
+  for (const hit of ftsHits) {
+    const entry = memoryIndex.get(hit.id);
+    if (!entry) continue;
+    if (!passesFilters(entry, options)) continue;
+
+    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
+    results.push({
+      entry,
+      score: hit.rank,
+      snippet: hit.snippet || undefined,
+      stale,
+    });
+
+    if (results.length >= options.limit) break;
+  }
+
+  return results;
 }
 
 export async function updateLastAccessed(id: string): Promise<void> {

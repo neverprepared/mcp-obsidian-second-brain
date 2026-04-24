@@ -11,6 +11,7 @@ import { linkToolDefinition, handleLink } from './link.js';
 import { projectToolDefinition, handleProject } from './project.js';
 import { statsToolDefinition, handleStats } from './stats.js';
 import { cleanupToolDefinition, handleCleanup } from './cleanup.js';
+import { timelineToolDefinition, handleTimeline } from './timeline.js';
 import {
   taskStartToolDefinition, handleTaskStart,
   taskUpdateToolDefinition, handleTaskUpdate,
@@ -31,6 +32,7 @@ export function getToolDefinitions() {
     projectToolDefinition,
     statsToolDefinition,
     cleanupToolDefinition,
+    timelineToolDefinition,
     taskStartToolDefinition,
     taskUpdateToolDefinition,
     taskCompleteToolDefinition,
@@ -50,6 +52,7 @@ const handlers: Record<string, (args: unknown) => Promise<CallToolResult>> = {
   memory_project: handleProject,
   memory_stats: handleStats,
   memory_cleanup: handleCleanup,
+  memory_timeline: handleTimeline,
   task_start: handleTaskStart,
   task_update: handleTaskUpdate,
   task_complete: handleTaskComplete,
