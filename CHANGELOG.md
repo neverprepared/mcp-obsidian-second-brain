@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.5.0...v0.6.0) (2026-04-24)
+
+
+### Features
+
+* add exclude_tags filter, graph traversal, and promotion dedup ([9b89104](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/9b891040c0ded9882c8c63de85fa85226d9789fe))
+
 ## [0.5.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.4.1...v0.5.0) (2026-04-24)
 
 
