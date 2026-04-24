@@ -188,6 +188,63 @@ export async function autoLinkRelated(
   return { linked, failed };
 }
 
+export interface GraphNode {
+  slug: string;
+  title: string;
+  depth: number;
+}
+
+/**
+ * BFS traversal of the link graph starting from a given slug.
+ * Returns all transitively related memories within `maxDepth` hops.
+ * Uses frontmatter `related` arrays for O(1) neighbor lookup (no file reads).
+ */
+export function traverseGraph(startSlug: string, maxDepth: number): GraphNode[] {
+  const index = getIndex();
+  const visited = new Set<string>();
+  const result: GraphNode[] = [];
+  const queue: Array<{ slug: string; depth: number }> = [{ slug: startSlug, depth: 0 }];
+
+  visited.add(startSlug);
+
+  while (queue.length > 0) {
+    const { slug, depth } = queue.shift()!;
+
+    // Don't include the start node in results
+    if (depth > 0) {
+      const entry = findBySlug(slug);
+      if (entry) {
+        result.push({ slug, title: entry.frontmatter.title, depth });
+      }
+    }
+
+    if (depth >= maxDepth) continue;
+
+    // Get neighbors from the index (frontmatter.related + find entries that reference this slug)
+    const entry = findBySlug(slug);
+    if (!entry) continue;
+
+    // Outgoing: this memory's related slugs
+    const neighbors = new Set(entry.frontmatter.related);
+
+    // Incoming: other memories that list this slug in their related
+    for (const other of index.values()) {
+      if (other.frontmatter.related.includes(slug)) {
+        neighbors.add(other.slug);
+      }
+    }
+
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push({ slug: neighbor, depth: depth + 1 });
+      }
+    }
+  }
+
+  return result;
+}
+
 export interface RemoveBacklinksResult {
   cleaned: string[];
   failed: string[];

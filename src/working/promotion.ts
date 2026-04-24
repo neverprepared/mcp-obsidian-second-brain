@@ -1,6 +1,7 @@
-import { searchMemories } from '../vault/search.js';
+import { searchMemories, findByTitle } from '../vault/search.js';
 import { handleStore } from '../tools/store.js';
 import { handleUpdate } from '../tools/update.js';
+import { isFtsReady, searchFts } from '../vault/fts-index.js';
 import type { Finding, MemoryType, TaskState } from './db.js';
 import { logger } from '../shared/logger.js';
 
@@ -48,12 +49,38 @@ function keywordsFromGoal(goal: string): string[] {
 
 /**
  * Attempts to find an existing Obsidian note that matches a finding's content.
- * Matches by title similarity (score >= 10) or shared tags.
+ * Uses multiple strategies to prevent near-duplicate creation:
+ * 1. Exact/partial title match via index
+ * 2. FTS5 ranked search (when available)
+ * 3. Keyword search fallback with score threshold
+ * 4. Tag overlap (2+ shared tags)
  * Returns the memory ID if found, otherwise undefined.
  */
-async function findMatchingNote(title: string, tags: string[]): Promise<string | undefined> {
+async function findMatchingNote(title: string, tags: string[], content: string): Promise<string | undefined> {
   try {
-    // Search by title words first
+    // 1. Direct title match (exact or partial via index)
+    const titleMatch = findByTitle(title);
+    if (titleMatch) {
+      return titleMatch.frontmatter.id;
+    }
+
+    // 2. FTS5 search on content for near-duplicate detection
+    if (isFtsReady()) {
+      // Search using first sentence of content for semantic match
+      const contentQuery = content.slice(0, 100).replace(/[^a-zA-Z0-9\s]/g, ' ').trim();
+      if (contentQuery.length > 10) {
+        const ftsHits = searchFts(contentQuery, 3);
+        for (const hit of ftsHits) {
+          // High FTS rank indicates strong content overlap
+          if (hit.rank > 5) {
+            logger.info('Dedup: found near-duplicate via FTS content match', { id: hit.id, rank: hit.rank });
+            return hit.id;
+          }
+        }
+      }
+    }
+
+    // 3. Search by title words
     const titleQuery = title.slice(0, 40);
     const results = await searchMemories({ query: titleQuery, limit: 5 });
 
@@ -92,7 +119,7 @@ async function promoteFinding(finding: Finding, goalTags: string[]): Promise<'cr
     ? `## Steps\n\n${finding.content}`
     : finding.content;
 
-  const existingId = await findMatchingNote(title, tags);
+  const existingId = await findMatchingNote(title, tags, content);
 
   if (existingId) {
     const result = await handleUpdate({

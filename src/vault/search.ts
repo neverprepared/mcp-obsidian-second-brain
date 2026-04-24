@@ -128,6 +128,7 @@ export interface SearchOptions extends DateFilters {
   query?: string;
   tags?: string[];
   tag_mode?: 'and' | 'or';
+  exclude_tags?: string[];
   para?: ParaCategory;
   status?: Status;
   freshness?: 'all' | 'fresh' | 'stale';
@@ -159,6 +160,12 @@ export function passesFilters(entry: IndexEntry, options: Omit<SearchOptions, 'q
     } else {
       if (!filterTagsLower.some((t) => entryTagsLower.includes(t))) return false;
     }
+  }
+
+  if (options.exclude_tags && options.exclude_tags.length > 0) {
+    const entryTagsLower = fm.tags.map((t) => t.toLowerCase());
+    const excludeLower = options.exclude_tags.map((t) => t.toLowerCase());
+    if (excludeLower.some((t) => entryTagsLower.includes(t))) return false;
   }
 
   const entryStale = isStale(fm.updated, fm.ttl_days, fm.para);

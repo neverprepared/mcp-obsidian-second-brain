@@ -22,6 +22,11 @@ export const searchToolDefinition = {
         enum: ['and', 'or'],
         description: 'Tag filter logic: "and" (all tags required, default) or "or" (any tag matches)',
       },
+      exclude_tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exclude memories with any of these tags',
+      },
       para: {
         type: 'string',
         enum: ['projects', 'areas', 'resources', 'archives'],
@@ -58,6 +63,7 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       query: input.query,
       tags: input.tags,
       tag_mode: input.tag_mode,
+      exclude_tags: input.exclude_tags,
       para: input.para,
       status: input.status,
       freshness: input.freshness,

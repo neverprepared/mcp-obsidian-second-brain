@@ -37,6 +37,7 @@ export const SearchInputSchema = z.object({
   query: z.string().optional(),
   tags: z.array(z.string()).optional(),
   tag_mode: TagModeSchema,
+  exclude_tags: z.array(z.string()).optional(),
   para: ParaCategorySchema.optional(),
   status: StatusSchema.optional(),
   freshness: FreshnessFilterSchema.default('all'),
@@ -53,6 +54,7 @@ export const ListInputSchema = z.object({
   para: ParaCategorySchema.optional(),
   tags: z.array(z.string()).optional(),
   tag_mode: TagModeSchema,
+  exclude_tags: z.array(z.string()).optional(),
   status: StatusSchema.optional(),
   sort_by: z.enum(['created', 'updated', 'title']).default('updated'),
   limit: z.number().min(1).max(100).default(20),
@@ -98,6 +100,7 @@ export const LinkInputSchema = z.object({
   source_id: z.string(),
   target_id: z.string().optional(),
   discover: z.boolean().default(false),
+  depth: z.number().int().min(1).max(5).optional(),
 }).refine(
   (data) => data.discover || data.target_id,
   { message: 'Either target_id or discover: true must be provided' }

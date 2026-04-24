@@ -4,7 +4,7 @@ import { LinkInputSchema } from '../schemas/tools.js';
 import { findById, indexEntry as updateIndex } from '../vault/search.js';
 import { readMemoryFile, writeMemoryFile } from '../vault/filesystem.js';
 import { parseMemoryFile, serializeMemory } from '../vault/frontmatter.js';
-import { discoverLinks, addRelatedLink } from '../vault/links.js';
+import { discoverLinks, addRelatedLink, traverseGraph } from '../vault/links.js';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 
@@ -20,6 +20,10 @@ export const linkToolDefinition = {
       discover: {
         type: 'boolean',
         description: 'If true, return all links for source_id instead of creating a link',
+      },
+      depth: {
+        type: 'number',
+        description: 'When discovering, traverse the link graph up to N hops (1-5, default: 1 = direct links only)',
       },
     },
     required: ['source_id'],
@@ -40,6 +44,38 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
 
     // Discover mode
     if (input.discover) {
+      const depth = input.depth ?? 1;
+
+      if (depth > 1) {
+        // Graph traversal mode: BFS up to N hops
+        const nodes = traverseGraph(sourceEntry.slug, depth);
+
+        if (nodes.length === 0) {
+          return {
+            content: [{ type: 'text', text: `No connections found for "${sourceEntry.frontmatter.title}" within ${depth} hops.` }],
+          };
+        }
+
+        // Group by depth
+        const byDepth = new Map<number, typeof nodes>();
+        for (const n of nodes) {
+          const list = byDepth.get(n.depth) ?? [];
+          list.push(n);
+          byDepth.set(n.depth, list);
+        }
+
+        const lines: string[] = [`Graph for "${sourceEntry.frontmatter.title}" (${depth} hops, ${nodes.length} connections):\n`];
+        for (const [d, items] of [...byDepth.entries()].sort((a, b) => a[0] - b[0])) {
+          lines.push(`**Depth ${d}:**`);
+          for (const item of items) {
+            lines.push(`  - [[${item.slug}]] — ${item.title}`);
+          }
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+      }
+
+      // Default: direct links only (depth 1)
       const links = await discoverLinks(sourceEntry.slug);
 
       const outgoing = links.outgoing.length > 0

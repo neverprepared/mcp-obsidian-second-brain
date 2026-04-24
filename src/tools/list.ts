@@ -28,6 +28,11 @@ export const listToolDefinition = {
         enum: ['and', 'or'],
         description: 'Tag filter logic: "and" (all tags required, default) or "or" (any tag matches)',
       },
+      exclude_tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exclude memories with any of these tags',
+      },
       status: {
         type: 'string',
         enum: ['active', 'stale', 'archived'],
@@ -69,6 +74,7 @@ export async function handleList(args: unknown): Promise<CallToolResult> {
         status: input.status,
         tags: input.tags,
         tag_mode: input.tag_mode,
+        exclude_tags: input.exclude_tags,
         created_after: input.created_after,
         created_before: input.created_before,
         updated_after: input.updated_after,
