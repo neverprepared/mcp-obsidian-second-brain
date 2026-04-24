@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.4.1...v0.5.0) (2026-04-24)
+
+
+### Features
+
+* add exclude_tags filter, graph traversal, and promotion dedup ([9b89104](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/9b891040c0ded9882c8c63de85fa85226d9789fe))
+* add FTS5 full-text search, memory_timeline tool, and fix tag re-embedding ([a42dc96](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/a42dc96468a2e6003f373a44ef9614476c918136))
+
 ## [0.4.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.3.1...v0.4.0) (2026-04-18)
 
 
