@@ -10,6 +10,7 @@ import { deleteToolDefinition, handleDelete } from './delete.js';
 import { linkToolDefinition, handleLink } from './link.js';
 import { projectToolDefinition, handleProject } from './project.js';
 import { statsToolDefinition, handleStats } from './stats.js';
+import { vectorStatsToolDefinition, handleVectorStats } from './vector-stats.js';
 import { cleanupToolDefinition, handleCleanup } from './cleanup.js';
 import { timelineToolDefinition, handleTimeline } from './timeline.js';
 import {
@@ -31,6 +32,7 @@ export function getToolDefinitions() {
     linkToolDefinition,
     projectToolDefinition,
     statsToolDefinition,
+    vectorStatsToolDefinition,
     cleanupToolDefinition,
     timelineToolDefinition,
     taskStartToolDefinition,
@@ -51,6 +53,7 @@ const handlers: Record<string, (args: unknown) => Promise<CallToolResult>> = {
   memory_link: handleLink,
   memory_project: handleProject,
   memory_stats: handleStats,
+  memory_vector_stats: handleVectorStats,
   memory_cleanup: handleCleanup,
   memory_timeline: handleTimeline,
   task_start: handleTaskStart,

@@ -7,7 +7,7 @@ import { CONFIG } from '../config.js';
 import { getIndex } from './search.js';
 import { embedBatch, buildEmbedText, isEmbeddingAvailable } from './embeddings.js';
 import { logger } from '../shared/logger.js';
-import { initFts } from './fts-index.js';
+import { initFts, isFtsReady } from './fts-index.js';
 
 let vecDb: Database.Database | null = null;
 
@@ -83,6 +83,91 @@ export function getEmbeddingStats(): { embedded: number; total: number } {
     ? (vecDb.prepare('SELECT COUNT(*) as n FROM embeddings').get() as { n: number }).n
     : 0;
   return { embedded, total };
+}
+
+/** Returns detailed vector index diagnostics for observability. */
+export function getVectorDiagnostics(): {
+  dbPath: string;
+  dbSizeBytes: number;
+  journalMode: string;
+  busyTimeout: number;
+  embeddingCount: number;
+  ftsRowCount: number;
+  ftsReady: boolean;
+  vectorReady: boolean;
+  unembeddedIds: string[];
+  syncLockHeld: boolean;
+  syncLockPid: number | null;
+} {
+  const dbPath = vectorDbPath();
+  let dbSizeBytes = 0;
+  try {
+    const stat = fsSync.statSync(dbPath);
+    dbSizeBytes = stat.size;
+    // Include WAL and SHM files if they exist
+    try { dbSizeBytes += fsSync.statSync(dbPath + '-wal').size; } catch { /* no WAL file */ }
+    try { dbSizeBytes += fsSync.statSync(dbPath + '-shm').size; } catch { /* no SHM file */ }
+  } catch { /* DB file doesn't exist yet */ }
+
+  let journalMode = 'unknown';
+  let busyTimeout = 0;
+  let embeddingCount = 0;
+  let ftsRowCount = 0;
+
+  if (vecDb) {
+    try {
+      journalMode = (vecDb.pragma('journal_mode') as Array<{ journal_mode: string }>)[0]?.journal_mode ?? 'unknown';
+    } catch { /* */ }
+    try {
+      busyTimeout = (vecDb.pragma('busy_timeout') as Array<{ busy_timeout: number }>)[0]?.busy_timeout ?? 0;
+    } catch { /* */ }
+    try {
+      embeddingCount = (vecDb.prepare('SELECT COUNT(*) as n FROM embeddings').get() as { n: number }).n;
+    } catch { /* */ }
+    try {
+      ftsRowCount = (vecDb.prepare('SELECT COUNT(*) as n FROM fts_memories').get() as { n: number }).n;
+    } catch { /* */ }
+  }
+
+  // Find unembedded notes
+  const index = getIndex();
+  const embeddedIds = getEmbeddedIds();
+  const unembeddedIds = [...index.keys()].filter((id) => !embeddedIds.has(id));
+
+  // Check sync lock state
+  let syncLockHeld = false;
+  let syncLockPid: number | null = null;
+  const lockPath = syncLockPath();
+  try {
+    if (fsSync.existsSync(lockPath)) {
+      const content = fsSync.readFileSync(lockPath, 'utf-8').trim();
+      const [pidStr, tsStr] = content.split(':');
+      const lockPidVal = parseInt(pidStr ?? '', 10);
+      const lockTime = parseInt(tsStr ?? '', 10);
+      const staleMs = 5 * 60 * 1000;
+      const isStaleVal = Date.now() - lockTime > staleMs;
+      let isAlive = false;
+      if (!isNaN(lockPidVal)) {
+        try { process.kill(lockPidVal, 0); isAlive = true; } catch { isAlive = false; }
+      }
+      syncLockHeld = !isStaleVal && isAlive;
+      syncLockPid = syncLockHeld ? lockPidVal : null;
+    }
+  } catch { /* no lock file */ }
+
+  return {
+    dbPath,
+    dbSizeBytes,
+    journalMode,
+    busyTimeout,
+    embeddingCount,
+    ftsRowCount,
+    ftsReady: isFtsReady(),
+    vectorReady: vecDb !== null,
+    unembeddedIds,
+    syncLockHeld,
+    syncLockPid,
+  };
 }
 
 /**
