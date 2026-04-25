@@ -116,16 +116,17 @@ export function getVectorDiagnostics(): {
 
   if (vecDb) {
     try {
-      journalMode = (vecDb.pragma('journal_mode') as Array<{ journal_mode: string }>)[0]?.journal_mode ?? 'unknown';
+      journalMode = vecDb.pragma('journal_mode', { simple: true }) as string ?? 'unknown';
     } catch { /* */ }
     try {
-      busyTimeout = (vecDb.pragma('busy_timeout') as Array<{ busy_timeout: number }>)[0]?.busy_timeout ?? 0;
+      busyTimeout = vecDb.pragma('busy_timeout', { simple: true }) as number ?? 0;
     } catch { /* */ }
     try {
       embeddingCount = (vecDb.prepare('SELECT COUNT(*) as n FROM embeddings').get() as { n: number }).n;
     } catch { /* */ }
     try {
-      ftsRowCount = (vecDb.prepare('SELECT COUNT(*) as n FROM fts_memories').get() as { n: number }).n;
+      // FTS5 virtual tables: use a MATCH-less count via rowid
+      ftsRowCount = (vecDb.prepare('SELECT COUNT(rowid) as n FROM fts_memories').get() as { n: number }).n;
     } catch { /* */ }
   }
 
