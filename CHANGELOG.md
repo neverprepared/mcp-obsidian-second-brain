@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.7.0...v0.7.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* correct pragma reads and FTS row count in vector_stats ([3b41404](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/3b414044169ab9aa73b24e43a6937eab494b2d2a))
+
 ## [0.7.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.6.0...v0.7.0) (2026-04-25)
 
 
