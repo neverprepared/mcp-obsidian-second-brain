@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import { CONFIG } from '../config.js';
 import { getIndex } from './search.js';
 import { embedBatch, buildEmbedText, isEmbeddingAvailable } from './embeddings.js';
@@ -21,6 +22,13 @@ export async function initVectorIndex(): Promise<void> {
 
     vecDb = new Database(dbPath);
     sqliteVec.load(vecDb);
+
+    // Enable WAL mode for concurrent read/write access across multiple
+    // MCP server instances sharing the same database file.
+    vecDb.pragma('journal_mode = WAL');
+    // Wait up to 5 seconds when another process holds a write lock
+    // instead of failing immediately with SQLITE_BUSY.
+    vecDb.pragma('busy_timeout = 5000');
 
     vecDb.exec(`
       CREATE TABLE IF NOT EXISTS embeddings (
@@ -108,9 +116,72 @@ export function searchVectors(queryEmbedding: number[], k: number): Array<{ id: 
     .slice(0, k);
 }
 
+/** Lock file path for coordinating sync across multiple instances. */
+function syncLockPath(): string {
+  return path.join(CONFIG.VAULT_PATH, CONFIG.INDEX_FOLDER, 'sync.lock');
+}
+
+/**
+ * Try to acquire an exclusive sync lock. Returns true if acquired.
+ * Uses a PID-based lock file with stale detection (5 min timeout).
+ */
+function acquireSyncLock(): boolean {
+  const lockPath = syncLockPath();
+  try {
+    // Check for existing lock
+    if (fsSync.existsSync(lockPath)) {
+      const content = fsSync.readFileSync(lockPath, 'utf-8').trim();
+      const [pidStr, tsStr] = content.split(':');
+      const lockPid = parseInt(pidStr ?? '', 10);
+      const lockTime = parseInt(tsStr ?? '', 10);
+
+      // Check if lock is stale (> 5 minutes old or owning process is dead)
+      const staleMs = 5 * 60 * 1000;
+      const isStale = Date.now() - lockTime > staleMs;
+      let isAlive = false;
+      if (!isNaN(lockPid)) {
+        try {
+          process.kill(lockPid, 0); // signal 0 = check existence
+          isAlive = true;
+        } catch {
+          isAlive = false;
+        }
+      }
+
+      if (!isStale && isAlive) {
+        return false; // lock held by a live process
+      }
+      // Stale or dead — remove and claim
+    }
+
+    // Write our PID and timestamp atomically via rename
+    const tmpPath = lockPath + `.${process.pid}.tmp`;
+    fsSync.writeFileSync(tmpPath, `${process.pid}:${Date.now()}`);
+    fsSync.renameSync(tmpPath, lockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Release the sync lock if we own it. */
+function releaseSyncLock(): void {
+  const lockPath = syncLockPath();
+  try {
+    const content = fsSync.readFileSync(lockPath, 'utf-8').trim();
+    const [pidStr] = content.split(':');
+    if (parseInt(pidStr ?? '', 10) === process.pid) {
+      fsSync.unlinkSync(lockPath);
+    }
+  } catch {
+    // Lock already gone or not ours — fine
+  }
+}
+
 /**
  * Background sync: find vault notes missing embeddings and batch-embed them.
  * Non-blocking — caller does not await. Progress logged to stderr.
+ * Uses a lock file so only one instance syncs at a time.
  */
 export function syncVectorIndex(): void {
   if (!vecDb) return;
@@ -120,41 +191,61 @@ export function syncVectorIndex(): void {
     try {
       if (!(await isEmbeddingAvailable())) return;
 
-      const index = getIndex();
-      const embeddedIds = getEmbeddedIds();
-      const missing = [...index.entries()].filter(([id]) => !embeddedIds.has(id));
-
-      if (missing.length === 0) {
-        logger.info('Vector index up to date', { count: embeddedIds.size });
+      if (!acquireSyncLock()) {
+        logger.info('Vector sync skipped — another instance is syncing');
         return;
       }
 
-      logger.info('Syncing vector index', { missing: missing.length, total: index.size });
+      try {
+        const index = getIndex();
+        const embeddedIds = getEmbeddedIds();
+        const missing = [...index.entries()].filter(([id]) => !embeddedIds.has(id));
 
-      // Build embed texts for all missing notes
-      const texts = missing.map(([, entry]) =>
-        buildEmbedText(
-          entry.frontmatter.title,
-          entry.frontmatter.tags,
-          entry.body ?? '',
-        )
-      );
-
-      const embeddings = await embedBatch(texts);
-
-      let synced = 0;
-      for (let i = 0; i < missing.length; i++) {
-        const [id] = missing[i]!;
-        const embedding = embeddings[i];
-        if (embedding) {
-          upsertVector(id, embedding);
-          synced++;
+        if (missing.length === 0) {
+          logger.info('Vector index up to date', { count: embeddedIds.size });
+          return;
         }
-      }
 
-      logger.info('Vector index sync complete', { synced, failed: missing.length - synced });
+        logger.info('Syncing vector index', { missing: missing.length, total: index.size });
+
+        // Build embed texts for all missing notes
+        const texts = missing.map(([, entry]) =>
+          buildEmbedText(
+            entry.frontmatter.title,
+            entry.frontmatter.tags,
+            entry.body ?? '',
+          )
+        );
+
+        const embeddings = await embedBatch(texts);
+
+        // Batch upserts in a single transaction for performance and atomicity
+        const upsertStmt = vecDb!.prepare(`
+          INSERT OR REPLACE INTO embeddings (id, embedding, dims, updated)
+          VALUES (?, ?, ?, datetime('now'))
+        `);
+
+        let synced = 0;
+        const tx = vecDb!.transaction(() => {
+          for (let i = 0; i < missing.length; i++) {
+            const [id] = missing[i]!;
+            const embedding = embeddings[i];
+            if (embedding) {
+              const buf = Buffer.from(new Float32Array(embedding).buffer);
+              upsertStmt.run(id, buf, embedding.length);
+              synced++;
+            }
+          }
+        });
+        tx();
+
+        logger.info('Vector index sync complete', { synced, failed: missing.length - synced });
+      } finally {
+        releaseSyncLock();
+      }
     } catch (err) {
       logger.warn('Vector index sync failed', { error: String(err) });
+      releaseSyncLock();
     }
   })();
 }
