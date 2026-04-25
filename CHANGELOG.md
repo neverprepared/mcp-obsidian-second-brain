@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.7.1...v0.8.0) (2026-04-25)
+
+
+### Features
+
+* add working memory snapshot files and memory_working_stats tool ([00f4afd](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/00f4afdb0548aa0a4d4cd1800f9504d1888b1592))
+
+
+### Bug Fixes
+
+* initialize vector/FTS index before building memory index ([9702115](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/970211551e48c1f1be6f2255f923c5bb0336b90c))
+
 ## [0.7.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.7.0...v0.7.1) (2026-04-25)
 
 
