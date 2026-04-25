@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.6.0...v0.7.0) (2026-04-25)
+
+
+### Features
+
+* add memory_vector_stats tool for index observability ([c0ec6f6](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/c0ec6f6f6083a6090cdc8fb1d8d94b615f523ac9))
+
+
+### Bug Fixes
+
+* correct pragma reads and FTS row count in vector_stats ([3b41404](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/3b414044169ab9aa73b24e43a6937eab494b2d2a))
+* SQLite concurrency safety for multi-instance access ([dcda687](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/dcda6871fe1f40f82e08ccf3f3ce89156de9e9fe))
+
 ## [0.6.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.5.0...v0.6.0) (2026-04-24)
 
 
