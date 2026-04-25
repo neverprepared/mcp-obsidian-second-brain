@@ -27,15 +27,18 @@ export async function startServer(): Promise<void> {
   // Ensure vault structure exists
   await ensureVaultStructure();
 
-  // Build in-memory index
+  // Initialize vector + FTS index before building the in-memory index,
+  // because buildIndex() calls rebuildFts() which needs the DB connection.
+  await initVectorIndex();
+
+  // Build in-memory index (also populates FTS5)
   await buildIndex();
 
   // Initialize session-scoped working memory
   initWorkingDb();
 
-  // Initialize vector index (gracefully disabled if sqlite-vec unavailable)
-  await initVectorIndex();
-  syncVectorIndex(); // background sync — non-blocking
+  // Background sync embeddings for any notes missing vectors
+  syncVectorIndex();
 
   const server = new Server(
     {
