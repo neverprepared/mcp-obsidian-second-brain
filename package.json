@@ -1,6 +1,6 @@
 {
   "name": "@neverprepared/mcp-obsidian-second-brain",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "MCP server for Obsidian-based second brain memory using PARA methodology",
   "type": "module",
   "main": "./dist/index.js",
