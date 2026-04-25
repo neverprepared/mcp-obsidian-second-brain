@@ -8,7 +8,7 @@ import {
 import { logger } from './shared/logger.js';
 import { ensureVaultStructure } from './para/structure.js';
 import { buildIndex } from './vault/search.js';
-import { initWorkingDb } from './working/db.js';
+import { initWorkingDb, cleanupSnapshot } from './working/db.js';
 import { initVectorIndex, syncVectorIndex } from './vault/vector-index.js';
 import { getToolDefinitions, handleToolCall } from './tools/index.js';
 import { CONFIG } from './config.js';
@@ -76,12 +76,14 @@ export async function startServer(): Promise<void> {
 
   process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down');
+    cleanupSnapshot();
     await server.close();
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down');
+    cleanupSnapshot();
     await server.close();
     process.exit(0);
   });

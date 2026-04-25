@@ -14,6 +14,7 @@ import {
   addQuestion,
   resolveQuestion,
   listActiveTasks,
+  writeSnapshot,
   type StepStatus,
 } from '../working/db.js';
 import { seedTaskFromVault } from '../working/retrieval.js';
@@ -143,6 +144,7 @@ export async function handleTaskStart(args: unknown): Promise<CallToolResult> {
     const seeded = await seedTaskFromVault(task_id, input.goal);
 
     logger.info('Task started', { task_id, goal: input.goal, seeded });
+    writeSnapshot();
 
     return {
       content: [
@@ -215,6 +217,8 @@ export async function handleTaskUpdate(args: unknown): Promise<CallToolResult> {
       changes.push(`Question #${input.resolve_question.id} resolved`);
     }
 
+    if (changes.length > 0) writeSnapshot();
+
     return {
       content: [
         {
@@ -252,6 +256,7 @@ export async function handleTaskComplete(args: unknown): Promise<CallToolResult>
     const counts = await promoteTaskToVault(state);
 
     deleteTask(input.task_id);
+    writeSnapshot();
 
     logger.info('Task completed', { task_id: input.task_id, ...counts });
 

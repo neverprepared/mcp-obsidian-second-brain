@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
+import path from 'node:path';
+import fsSync from 'node:fs';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
+import { CONFIG } from '../config.js';
 
 export type MemoryType = 'semantic' | 'episodic' | 'procedural';
 export type TaskStatus = 'active' | 'completed' | 'failed';
@@ -264,6 +267,139 @@ export function getTaskState(task_id: string): TaskState | undefined {
     artifacts: d.prepare('SELECT * FROM artifacts WHERE task_id = ? ORDER BY id').all(task_id) as Artifact[],
     questions: d.prepare('SELECT * FROM questions WHERE task_id = ? ORDER BY id').all(task_id) as Question[],
   };
+}
+
+// --- Snapshot ---
+
+function snapshotDir(): string {
+  return path.join(CONFIG.VAULT_PATH, CONFIG.INDEX_FOLDER);
+}
+
+function snapshotPath(): string {
+  return path.join(snapshotDir(), `working-memory-${process.pid}.json`);
+}
+
+export interface WorkingMemorySnapshot {
+  pid: number;
+  server_start: string;
+  updated_at: string;
+  tasks: Array<{
+    task_id: string;
+    goal: string;
+    status: string;
+    current_step: string | null;
+    created_at: string;
+    updated_at: string;
+    steps: { total: number; pending: number; completed: number; failed: number };
+    findings: { total: number; low: number; medium: number; high: number };
+    artifacts: number;
+    questions: { total: number; open: number; resolved: number };
+  }>;
+}
+
+const serverStart = nowISO();
+
+/** Write a snapshot of all active working memory to a JSON file. */
+export function writeSnapshot(): void {
+  if (!db) return;
+
+  try {
+    const tasks = db.prepare("SELECT * FROM tasks WHERE status = 'active' ORDER BY created_at DESC").all() as Task[];
+
+    const snapshot: WorkingMemorySnapshot = {
+      pid: process.pid,
+      server_start: serverStart,
+      updated_at: nowISO(),
+      tasks: tasks.map((t) => {
+        const steps = db!.prepare('SELECT status FROM steps WHERE task_id = ?').all(t.task_id) as Array<{ status: string }>;
+        const findings = db!.prepare('SELECT importance FROM findings WHERE task_id = ?').all(t.task_id) as Array<{ importance: string }>;
+        const artifacts = (db!.prepare('SELECT COUNT(*) as n FROM artifacts WHERE task_id = ?').get(t.task_id) as { n: number }).n;
+        const questions = db!.prepare('SELECT resolved FROM questions WHERE task_id = ?').all(t.task_id) as Array<{ resolved: number }>;
+
+        return {
+          task_id: t.task_id,
+          goal: t.goal,
+          status: t.status,
+          current_step: t.current_step,
+          created_at: t.created_at,
+          updated_at: t.updated_at,
+          steps: {
+            total: steps.length,
+            pending: steps.filter((s) => s.status === 'pending').length,
+            completed: steps.filter((s) => s.status === 'completed').length,
+            failed: steps.filter((s) => s.status === 'failed').length,
+          },
+          findings: {
+            total: findings.length,
+            low: findings.filter((f) => f.importance === 'low').length,
+            medium: findings.filter((f) => f.importance === 'medium').length,
+            high: findings.filter((f) => f.importance === 'high').length,
+          },
+          artifacts,
+          questions: {
+            total: questions.length,
+            open: questions.filter((q) => !q.resolved).length,
+            resolved: questions.filter((q) => q.resolved).length,
+          },
+        };
+      }),
+    };
+
+    const dir = snapshotDir();
+    fsSync.mkdirSync(dir, { recursive: true });
+    const tmpPath = snapshotPath() + '.tmp';
+    fsSync.writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2));
+    fsSync.renameSync(tmpPath, snapshotPath());
+  } catch (err) {
+    logger.warn('Failed to write working memory snapshot', { error: String(err) });
+  }
+}
+
+/** Remove this process's snapshot file. Called on graceful shutdown. */
+export function cleanupSnapshot(): void {
+  try {
+    const fp = snapshotPath();
+    if (fsSync.existsSync(fp)) {
+      fsSync.unlinkSync(fp);
+    }
+  } catch {
+    // Best effort — process is exiting
+  }
+}
+
+/**
+ * Read all working memory snapshots from disk. Filters out stale
+ * snapshots from dead processes.
+ */
+export function readAllSnapshots(): WorkingMemorySnapshot[] {
+  const dir = snapshotDir();
+  const snapshots: WorkingMemorySnapshot[] = [];
+
+  try {
+    const files = fsSync.readdirSync(dir).filter((f) => f.startsWith('working-memory-') && f.endsWith('.json'));
+
+    for (const file of files) {
+      try {
+        const content = fsSync.readFileSync(path.join(dir, file), 'utf-8');
+        const snapshot = JSON.parse(content) as WorkingMemorySnapshot;
+
+        // Check if owning process is still alive
+        try {
+          process.kill(snapshot.pid, 0);
+          snapshots.push(snapshot);
+        } catch {
+          // Process is dead — clean up stale snapshot
+          try { fsSync.unlinkSync(path.join(dir, file)); } catch { /* */ }
+        }
+      } catch {
+        // Corrupt or unreadable — skip
+      }
+    }
+  } catch {
+    // Dir doesn't exist yet — no snapshots
+  }
+
+  return snapshots;
 }
 
 // --- Internal ---
