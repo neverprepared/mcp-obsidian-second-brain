@@ -29,11 +29,16 @@ export function isFtsReady(): boolean {
 export function upsertFts(id: string, title: string, tags: string[], body: string): void {
   if (!db) return;
   const tagStr = tags.join(' ');
-  // FTS5 doesn't support UPSERT — delete then insert
-  db.prepare('DELETE FROM fts_memories WHERE id = ?').run(id);
-  db.prepare(
-    'INSERT INTO fts_memories (id, title, tags, body) VALUES (?, ?, ?, ?)'
-  ).run(id, title, tagStr, body);
+  // FTS5 doesn't support UPSERT — delete then insert.
+  // Wrapped in a transaction so concurrent readers never see a missing entry
+  // between the DELETE and INSERT.
+  const tx = db.transaction(() => {
+    db!.prepare('DELETE FROM fts_memories WHERE id = ?').run(id);
+    db!.prepare(
+      'INSERT INTO fts_memories (id, title, tags, body) VALUES (?, ?, ?, ?)'
+    ).run(id, title, tagStr, body);
+  });
+  tx();
 }
 
 /** Remove an FTS entry by memory id. */
