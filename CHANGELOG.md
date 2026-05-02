@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.8.0...v0.9.0) (2026-05-02)
+
+
+### Features
+
+* use sqlite-vec KNN search and consolidate tools from 18 to 14 ([#9](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/9)) ([cc18993](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/cc189937f8e55bd229f623a5e73af8b2b97cd252))
+
 ## [0.8.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.7.1...v0.8.0) (2026-04-25)
 
 
