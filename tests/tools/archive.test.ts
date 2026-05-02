@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleStore } from '../../src/tools/store.js';
-import { handleArchive } from '../../src/tools/archive.js';
-import { handleList } from '../../src/tools/list.js';
+import { handleUpdate } from '../../src/tools/update.js';
+import { handleSearch } from '../../src/tools/search.js';
 import { getIndex } from '../../src/vault/search.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';
 
-describe('memory_archive tool', () => {
+describe('archive via memory_update', () => {
   let tmpDir: string;
   let originalVaultPath: string;
 
@@ -22,9 +22,9 @@ describe('memory_archive tool', () => {
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 
-  it('sets status to archived', async () => {
+  it('sets status to archived via update', async () => {
     const id = await storeAndGetId();
-    const result = await handleArchive({ id });
+    const result = await handleUpdate({ id, status: 'archived' });
     expect(result.isError).toBeUndefined();
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.id === id)!;
@@ -32,15 +32,15 @@ describe('memory_archive tool', () => {
   });
 
   it('returns error for unknown id', async () => {
-    const result = await handleArchive({ id: 'mem_0_notexist' });
+    const result = await handleUpdate({ id: 'mem_0_notexist', status: 'archived' });
     expect(result.isError).toBe(true);
   });
 
-  it('archived memory excluded from default list', async () => {
+  it('archived memory excluded from default search', async () => {
     const id = await storeAndGetId('Will Be Archived');
-    await handleArchive({ id });
+    await handleUpdate({ id, status: 'archived' });
 
-    const result = await handleList({});
+    const result = await handleSearch({});
     expect(result.content[0]!.text).not.toContain('Will Be Archived');
   });
 });

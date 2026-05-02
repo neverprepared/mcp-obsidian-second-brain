@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleStore } from '../../src/tools/store.js';
 import { handleSearch } from '../../src/tools/search.js';
-import { handleList } from '../../src/tools/list.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';
 
 describe('exclude_tags filter', () => {
@@ -20,7 +19,7 @@ describe('exclude_tags filter', () => {
     return handleStore({ title, content: `Content about ${title}`, para: 'resources', tags });
   }
 
-  describe('memory_search', () => {
+  describe('memory_search with query', () => {
     it('excludes memories with specified tags', async () => {
       await store('Keep me', ['python', 'tutorial']);
       await store('Exclude me', ['python', 'draft']);
@@ -55,12 +54,12 @@ describe('exclude_tags filter', () => {
     });
   });
 
-  describe('memory_list', () => {
+  describe('memory_search listing mode (no query)', () => {
     it('excludes memories with specified tags', async () => {
       await store('Visible', ['important']);
       await store('Hidden', ['noise']);
 
-      const result = await handleList({ exclude_tags: ['noise'] });
+      const result = await handleSearch({ exclude_tags: ['noise'] });
       const text = result.content[0]!.text;
       expect(text).toContain('Visible');
       expect(text).not.toContain('Hidden');

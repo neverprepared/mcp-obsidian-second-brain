@@ -3,15 +3,11 @@ import type { CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/
 import { storeToolDefinition, handleStore } from './store.js';
 import { recallToolDefinition, handleRecall } from './recall.js';
 import { searchToolDefinition, handleSearch } from './search.js';
-import { listToolDefinition, handleList } from './list.js';
 import { updateToolDefinition, handleUpdate } from './update.js';
-import { archiveToolDefinition, handleArchive } from './archive.js';
 import { deleteToolDefinition, handleDelete } from './delete.js';
 import { linkToolDefinition, handleLink } from './link.js';
 import { projectToolDefinition, handleProject } from './project.js';
 import { statsToolDefinition, handleStats } from './stats.js';
-import { vectorStatsToolDefinition, handleVectorStats } from './vector-stats.js';
-import { workingStatsToolDefinition, handleWorkingStats } from './working-stats.js';
 import { cleanupToolDefinition, handleCleanup } from './cleanup.js';
 import { timelineToolDefinition, handleTimeline } from './timeline.js';
 import {
@@ -26,15 +22,11 @@ export function getToolDefinitions() {
     storeToolDefinition,
     recallToolDefinition,
     searchToolDefinition,
-    listToolDefinition,
     updateToolDefinition,
-    archiveToolDefinition,
     deleteToolDefinition,
     linkToolDefinition,
     projectToolDefinition,
     statsToolDefinition,
-    vectorStatsToolDefinition,
-    workingStatsToolDefinition,
     cleanupToolDefinition,
     timelineToolDefinition,
     taskStartToolDefinition,
@@ -48,15 +40,11 @@ const handlers: Record<string, (args: unknown) => Promise<CallToolResult>> = {
   memory_store: handleStore,
   memory_recall: handleRecall,
   memory_search: handleSearch,
-  memory_list: handleList,
   memory_update: handleUpdate,
-  memory_archive: handleArchive,
   memory_delete: handleDelete,
   memory_link: handleLink,
   memory_project: handleProject,
   memory_stats: handleStats,
-  memory_vector_stats: handleVectorStats,
-  memory_working_stats: handleWorkingStats,
   memory_cleanup: handleCleanup,
   memory_timeline: handleTimeline,
   task_start: handleTaskStart,

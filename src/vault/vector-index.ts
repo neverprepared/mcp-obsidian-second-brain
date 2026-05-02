@@ -30,14 +30,24 @@ export async function initVectorIndex(): Promise<void> {
     // instead of failing immediately with SQLITE_BUSY.
     vecDb.pragma('busy_timeout = 5000');
 
+    // Mapping table: string memory ID -> integer rowid for vec0
     vecDb.exec(`
-      CREATE TABLE IF NOT EXISTS embeddings (
+      CREATE TABLE IF NOT EXISTS vec_map (
         id        TEXT PRIMARY KEY,
-        embedding BLOB NOT NULL,
-        dims      INTEGER NOT NULL,
+        vec_rowid INTEGER UNIQUE NOT NULL,
         updated   TEXT NOT NULL
       );
     `);
+
+    // vec0 virtual table for native KNN search with cosine distance
+    const dims = CONFIG.EMBEDDING_DIMS;
+    vecDb.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings
+      USING vec0(embedding float[${dims}] distance_metric=cosine);
+    `);
+
+    // Migrate from legacy embeddings table if it exists
+    migrateFromLegacyTable();
 
     // Initialize FTS5 in the same database
     initFts(vecDb);
@@ -49,30 +59,94 @@ export async function initVectorIndex(): Promise<void> {
   }
 }
 
+/** Migrate data from the old flat embeddings table to vec0 + vec_map. */
+function migrateFromLegacyTable(): void {
+  if (!vecDb) return;
+
+  // Check if old table exists
+  const oldTable = vecDb.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings'"
+  ).get() as { name: string } | undefined;
+  if (!oldTable) return;
+
+  logger.info('Migrating legacy embeddings table to vec0...');
+
+  const oldRows = vecDb.prepare('SELECT id, embedding, dims FROM embeddings').all() as {
+    id: string;
+    embedding: Buffer;
+    dims: number;
+  }[];
+
+  if (oldRows.length > 0) {
+    let nextRowid = (vecDb.prepare('SELECT COALESCE(MAX(vec_rowid), 0) as m FROM vec_map').get() as { m: number }).m + 1;
+
+    const insVec = vecDb.prepare('INSERT INTO vec_embeddings(rowid, embedding) VALUES (?, ?)');
+    const insMap = vecDb.prepare("INSERT OR IGNORE INTO vec_map(id, vec_rowid, updated) VALUES (?, ?, datetime('now'))");
+
+    const tx = vecDb.transaction(() => {
+      for (const row of oldRows) {
+        // Skip if already migrated
+        const existing = vecDb!.prepare('SELECT vec_rowid FROM vec_map WHERE id = ?').get(row.id) as { vec_rowid: number } | undefined;
+        if (existing) continue;
+
+        insVec.run(BigInt(nextRowid), row.embedding);
+        insMap.run(row.id, nextRowid);
+        nextRowid++;
+      }
+    });
+    tx();
+
+    logger.info('Migrated legacy embeddings', { count: oldRows.length });
+  }
+
+  vecDb.exec('DROP TABLE embeddings');
+  logger.info('Dropped legacy embeddings table');
+}
+
 export function isVectorIndexReady(): boolean {
   return vecDb !== null;
 }
 
-/** Upsert a single embedding (float32 array stored as BLOB). */
+/** Upsert a single embedding. Uses delete+insert since vec0 doesn't support UPSERT. */
 export function upsertVector(id: string, embedding: number[]): void {
   if (!vecDb) return;
   const buf = Buffer.from(new Float32Array(embedding).buffer);
-  vecDb.prepare(`
-    INSERT OR REPLACE INTO embeddings (id, embedding, dims, updated)
-    VALUES (?, ?, ?, datetime('now'))
-  `).run(id, buf, embedding.length);
+
+  const tx = vecDb.transaction(() => {
+    const existing = vecDb!.prepare('SELECT vec_rowid FROM vec_map WHERE id = ?').get(id) as { vec_rowid: number } | undefined;
+
+    if (existing) {
+      // Update: delete old vec0 row, insert new one at same rowid
+      vecDb!.prepare('DELETE FROM vec_embeddings WHERE rowid = ?').run(BigInt(existing.vec_rowid));
+      vecDb!.prepare('INSERT INTO vec_embeddings(rowid, embedding) VALUES (?, ?)').run(BigInt(existing.vec_rowid), buf);
+      vecDb!.prepare("UPDATE vec_map SET updated = datetime('now') WHERE id = ?").run(id);
+    } else {
+      // Insert: allocate next rowid
+      const nextRowid = (vecDb!.prepare('SELECT COALESCE(MAX(vec_rowid), 0) + 1 as n FROM vec_map').get() as { n: number }).n;
+      vecDb!.prepare('INSERT INTO vec_embeddings(rowid, embedding) VALUES (?, ?)').run(BigInt(nextRowid), buf);
+      vecDb!.prepare("INSERT INTO vec_map(id, vec_rowid, updated) VALUES (?, ?, datetime('now'))").run(id, nextRowid);
+    }
+  });
+  tx();
 }
 
 /** Remove a vector by memory id. */
 export function deleteVector(id: string): void {
   if (!vecDb) return;
-  vecDb.prepare('DELETE FROM embeddings WHERE id = ?').run(id);
+  const tx = vecDb.transaction(() => {
+    const existing = vecDb!.prepare('SELECT vec_rowid FROM vec_map WHERE id = ?').get(id) as { vec_rowid: number } | undefined;
+    if (existing) {
+      vecDb!.prepare('DELETE FROM vec_embeddings WHERE rowid = ?').run(BigInt(existing.vec_rowid));
+      vecDb!.prepare('DELETE FROM vec_map WHERE id = ?').run(id);
+    }
+  });
+  tx();
 }
 
 /** Returns the set of memory ids that already have embeddings. */
 export function getEmbeddedIds(): Set<string> {
   if (!vecDb) return new Set();
-  const rows = vecDb.prepare('SELECT id FROM embeddings').all() as { id: string }[];
+  const rows = vecDb.prepare('SELECT id FROM vec_map').all() as { id: string }[];
   return new Set(rows.map((r) => r.id));
 }
 
@@ -80,7 +154,7 @@ export function getEmbeddedIds(): Set<string> {
 export function getEmbeddingStats(): { embedded: number; total: number } {
   const total = getIndex().size;
   const embedded = vecDb
-    ? (vecDb.prepare('SELECT COUNT(*) as n FROM embeddings').get() as { n: number }).n
+    ? (vecDb.prepare('SELECT COUNT(*) as n FROM vec_map').get() as { n: number }).n
     : 0;
   return { embedded, total };
 }
@@ -122,7 +196,7 @@ export function getVectorDiagnostics(): {
       busyTimeout = vecDb.pragma('busy_timeout', { simple: true }) as number ?? 0;
     } catch { /* */ }
     try {
-      embeddingCount = (vecDb.prepare('SELECT COUNT(*) as n FROM embeddings').get() as { n: number }).n;
+      embeddingCount = (vecDb.prepare('SELECT COUNT(*) as n FROM vec_map').get() as { n: number }).n;
     } catch { /* */ }
     try {
       // FTS5 virtual tables: use a MATCH-less count via rowid
@@ -172,34 +246,28 @@ export function getVectorDiagnostics(): {
 }
 
 /**
- * Search for the top-k nearest embeddings to a query vector.
+ * Search for the top-k nearest embeddings to a query vector using sqlite-vec KNN.
  * Returns { id, distance } pairs sorted by ascending distance (closest first).
  */
 export function searchVectors(queryEmbedding: number[], k: number): Array<{ id: string; distance: number }> {
   if (!vecDb) return [];
 
-  // Manual cosine similarity — sqlite-vec vec0 requires different setup
-  // Use dot-product over pre-normalized float32 blobs instead
-  const rows = vecDb.prepare('SELECT id, embedding, dims FROM embeddings').all() as {
-    id: string;
-    embedding: Buffer;
-    dims: number;
-  }[];
+  const queryBuf = Buffer.from(new Float32Array(queryEmbedding).buffer);
 
-  if (rows.length === 0) return [];
+  try {
+    const rows = vecDb.prepare(`
+      SELECT m.id, v.distance
+      FROM vec_embeddings v
+      JOIN vec_map m ON m.vec_rowid = v.rowid
+      WHERE v.embedding MATCH ? AND k = ?
+      ORDER BY v.distance
+    `).all(queryBuf, k) as Array<{ id: string; distance: number }>;
 
-  const query = new Float32Array(queryEmbedding);
-  const queryMag = magnitude(query);
-
-  const scored = rows.map((row) => {
-    const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.dims);
-    const sim = cosineSimilarity(query, vec, queryMag);
-    return { id: row.id, distance: 1 - sim }; // distance = 1 - similarity
-  });
-
-  return scored
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, k);
+    return rows;
+  } catch (err) {
+    logger.warn('Vector KNN search failed', { error: String(err) });
+    return [];
+  }
 }
 
 /** Lock file path for coordinating sync across multiple instances. */
@@ -306,11 +374,6 @@ export function syncVectorIndex(): void {
         const embeddings = await embedBatch(texts);
 
         // Batch upserts in a single transaction for performance and atomicity
-        const upsertStmt = vecDb!.prepare(`
-          INSERT OR REPLACE INTO embeddings (id, embedding, dims, updated)
-          VALUES (?, ?, ?, datetime('now'))
-        `);
-
         let synced = 0;
         const tx = vecDb!.transaction(() => {
           for (let i = 0; i < missing.length; i++) {
@@ -318,7 +381,9 @@ export function syncVectorIndex(): void {
             const embedding = embeddings[i];
             if (embedding) {
               const buf = Buffer.from(new Float32Array(embedding).buffer);
-              upsertStmt.run(id, buf, embedding.length);
+              const nextRowid = (vecDb!.prepare('SELECT COALESCE(MAX(vec_rowid), 0) + 1 as n FROM vec_map').get() as { n: number }).n;
+              vecDb!.prepare('INSERT INTO vec_embeddings(rowid, embedding) VALUES (?, ?)').run(BigInt(nextRowid), buf);
+              vecDb!.prepare("INSERT INTO vec_map(id, vec_rowid, updated) VALUES (?, ?, datetime('now'))").run(id, nextRowid);
               synced++;
             }
           }
@@ -334,20 +399,4 @@ export function syncVectorIndex(): void {
       releaseSyncLock();
     }
   })();
-}
-
-// --- Math helpers ---
-
-function magnitude(v: Float32Array): number {
-  let sum = 0;
-  for (let i = 0; i < v.length; i++) sum += (v[i] ?? 0) ** 2;
-  return Math.sqrt(sum);
-}
-
-function cosineSimilarity(a: Float32Array, b: Float32Array, aMag?: number): number {
-  if (a.length !== b.length) return 0;
-  let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += (a[i] ?? 0) * (b[i] ?? 0);
-  const mag = (aMag ?? magnitude(a)) * magnitude(b);
-  return mag === 0 ? 0 : dot / mag;
 }

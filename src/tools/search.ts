@@ -7,11 +7,11 @@ import { logger } from '../shared/logger.js';
 export const searchToolDefinition = {
   name: 'memory_search',
   description:
-    'Search memories by content, tags, or PARA category. Supports full-text search with relevance scoring.',
+    'Search and list memories. With a query: full-text + semantic search with relevance scoring. Without a query: list memories with filters and sorting. Archived memories are excluded by default unless include_archived is true.',
   inputSchema: {
     type: 'object' as const,
     properties: {
-      query: { type: 'string', description: 'Full-text search query (searches title, content, tags)' },
+      query: { type: 'string', description: 'Full-text search query (searches title, content, tags). Omit to list/browse.' },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -42,12 +42,21 @@ export const searchToolDefinition = {
         enum: ['all', 'fresh', 'stale'],
         description: 'Filter by freshness based on TTL (default: all)',
       },
+      sort_by: {
+        type: 'string',
+        enum: ['relevance', 'created', 'updated', 'title'],
+        description: 'Sort order: "relevance" (default for queries), "created", "updated", "title"',
+      },
       search_mode: {
         type: 'string',
         enum: ['auto', 'keyword', 'vector'],
         description: 'Search mode: "auto" uses vector+keyword hybrid when Ollama is available (default), "keyword" forces full-text only, "vector" forces semantic only',
       },
-      limit: { type: 'number', description: 'Max results (default: 10, max: 50)' },
+      limit: { type: 'number', description: 'Max results (default: 10, max: 100)' },
+      include_archived: {
+        type: 'boolean',
+        description: 'Include archived memories (default: false)',
+      },
       created_after: { type: 'string', description: 'Filter by created date (ISO 8601, inclusive)' },
       created_before: { type: 'string', description: 'Filter by created date (ISO 8601, inclusive)' },
       updated_after: { type: 'string', description: 'Filter by updated date (ISO 8601, inclusive)' },
@@ -59,34 +68,49 @@ export const searchToolDefinition = {
 export async function handleSearch(args: unknown): Promise<CallToolResult> {
   try {
     const input = SearchInputSchema.parse(args);
+
+    // Exclude archived by default unless explicitly requested or filtering by archived status
+    const effectiveStatus = input.status ??
+      (!input.include_archived ? undefined : undefined);
+    const excludeArchived = !input.include_archived && !input.status;
+
     const results = await searchMemories({
       query: input.query,
       tags: input.tags,
       tag_mode: input.tag_mode,
       exclude_tags: input.exclude_tags,
       para: input.para,
-      status: input.status,
+      status: effectiveStatus,
       freshness: input.freshness,
-      limit: input.limit,
+      limit: excludeArchived ? input.limit * 2 : input.limit, // over-fetch to filter archived
       search_mode: input.search_mode,
+      sort_by: input.sort_by,
       created_after: input.created_after,
       created_before: input.created_before,
       updated_after: input.updated_after,
       updated_before: input.updated_before,
     });
 
-    if (results.length === 0) {
+    // Post-filter archived if needed
+    let filtered = excludeArchived
+      ? results.filter((r) => r.entry.frontmatter.status !== 'archived')
+      : results;
+    filtered = filtered.slice(0, input.limit);
+
+    if (filtered.length === 0) {
       return {
-        content: [{ type: 'text', text: 'No memories found matching your search criteria.' }],
+        content: [{ type: 'text', text: 'No memories found matching your criteria.' }],
       };
     }
 
     // Update last_accessed for top results (fire-and-forget)
-    for (const r of results.slice(0, 5)) {
-      void updateLastAccessed(r.entry.frontmatter.id);
+    if (input.query) {
+      for (const r of filtered.slice(0, 5)) {
+        void updateLastAccessed(r.entry.frontmatter.id);
+      }
     }
 
-    const lines = results.map((r, i) => {
+    const lines = filtered.map((r, i) => {
       const fm = r.entry.frontmatter;
       const freshness = r.stale ? 'STALE' : 'Fresh';
       let line = `${i + 1}. **${fm.title}** (${fm.para}) [${freshness}]`;
@@ -102,7 +126,7 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Found ${results.length} memor${results.length === 1 ? 'y' : 'ies'}:\n\n${lines.join('\n\n')}`,
+          text: `Found ${filtered.length} memor${filtered.length === 1 ? 'y' : 'ies'}:\n\n${lines.join('\n\n')}`,
         },
       ],
     };

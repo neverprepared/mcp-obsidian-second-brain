@@ -41,7 +41,9 @@ export const SearchInputSchema = z.object({
   para: ParaCategorySchema.optional(),
   status: StatusSchema.optional(),
   freshness: FreshnessFilterSchema.default('all'),
-  limit: z.number().min(1).max(50).default(10),
+  sort_by: z.enum(['relevance', 'created', 'updated', 'title']).default('relevance'),
+  limit: z.number().min(1).max(100).default(10),
+  include_archived: z.boolean().default(false),
   search_mode: SearchModeSchema,
   created_after: z.string().optional(),
   created_before: z.string().optional(),
@@ -50,21 +52,6 @@ export const SearchInputSchema = z.object({
 });
 export type SearchInput = z.infer<typeof SearchInputSchema>;
 
-export const ListInputSchema = z.object({
-  para: ParaCategorySchema.optional(),
-  tags: z.array(z.string()).optional(),
-  tag_mode: TagModeSchema,
-  exclude_tags: z.array(z.string()).optional(),
-  status: StatusSchema.optional(),
-  sort_by: z.enum(['created', 'updated', 'title']).default('updated'),
-  limit: z.number().min(1).max(100).default(20),
-  include_archived: z.boolean().default(false),
-  created_after: z.string().optional(),
-  created_before: z.string().optional(),
-  updated_after: z.string().optional(),
-  updated_before: z.string().optional(),
-});
-export type ListInput = z.infer<typeof ListInputSchema>;
 
 export const UpdateInputSchema = z.object({
   id: z.string(),
@@ -82,10 +69,6 @@ export const UpdateInputSchema = z.object({
 });
 export type UpdateInput = z.infer<typeof UpdateInputSchema>;
 
-export const ArchiveInputSchema = z.object({
-  id: z.string(),
-});
-export type ArchiveInput = z.infer<typeof ArchiveInputSchema>;
 
 export const DeleteInputSchema = z.object({
   id: z.string(),
