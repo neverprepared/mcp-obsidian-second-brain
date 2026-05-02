@@ -10,12 +10,13 @@ import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 import { embedText, buildEmbedText } from '../vault/embeddings.js';
 import { upsertVector } from '../vault/vector-index.js';
+import { renameSlugReferences } from '../vault/links.js';
 import path from 'node:path';
 
 export const updateToolDefinition = {
   name: 'memory_update',
   description:
-    'Update an existing memory. Can modify content, tags, PARA category, or metadata. Moving PARA category physically relocates the file.',
+    'Update an existing memory. Can modify content, tags, PARA category, status, or metadata. Setting status to "archived" archives in place (preserves links). Setting para to "archives" physically moves the file. Renaming a title updates all cross-references.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -125,6 +126,11 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
 
     // Update index (include body for content search cache)
     updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug, body: content });
+
+    // Repair references in other notes when slug changes
+    if (newSlug !== entry.slug) {
+      await renameSlugReferences(entry.slug, newSlug);
+    }
 
     // Re-embed if title, content, or tags changed (fire-and-forget)
     if (input.title !== undefined || input.content !== undefined || input.tags !== undefined || input.add_tags !== undefined) {
