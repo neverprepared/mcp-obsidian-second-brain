@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleStore } from '../../src/tools/store.js';
 import { handleStats } from '../../src/tools/stats.js';
-import { handleArchive } from '../../src/tools/archive.js';
 import { handleLink } from '../../src/tools/link.js';
 import { getIndex } from '../../src/vault/search.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';

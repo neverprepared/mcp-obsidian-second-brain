@@ -132,6 +132,7 @@ export interface SearchOptions extends DateFilters {
   para?: ParaCategory;
   status?: Status;
   freshness?: 'all' | 'fresh' | 'stale';
+  sort_by?: 'relevance' | 'created' | 'updated' | 'title';
   limit: number;
   search_mode?: 'auto' | 'keyword' | 'vector';
 }
@@ -208,6 +209,21 @@ function scoreKeyword(entry: IndexEntry, query: string): { score: number; snippe
   return { score, snippet };
 }
 
+/** Apply sort_by to results. 'relevance' keeps existing score-based order. */
+function applySortBy(results: SearchResult[], sortBy: string | undefined): void {
+  if (!sortBy || sortBy === 'relevance') {
+    // Already sorted by score descending, then updated descending
+    return;
+  }
+  const sortFns: Record<string, (a: SearchResult, b: SearchResult) => number> = {
+    created: (a, b) => b.entry.frontmatter.created.localeCompare(a.entry.frontmatter.created),
+    updated: (a, b) => b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated),
+    title: (a, b) => a.entry.frontmatter.title.localeCompare(b.entry.frontmatter.title),
+  };
+  const fn = sortFns[sortBy];
+  if (fn) results.sort(fn);
+}
+
 export async function searchMemories(options: SearchOptions): Promise<SearchResult[]> {
   const mode = options.search_mode ?? 'auto';
   const useVector =
@@ -215,10 +231,15 @@ export async function searchMemories(options: SearchOptions): Promise<SearchResu
     Boolean(options.query) &&
     isVectorIndexReady();
 
+  let results: SearchResult[];
   if (useVector && options.query) {
-    return hybridSearch(options, options.query);
+    results = await hybridSearch(options, options.query);
+  } else {
+    results = keywordSearch(options);
   }
-  return keywordSearch(options);
+
+  applySortBy(results, options.sort_by);
+  return results;
 }
 
 async function hybridSearch(options: SearchOptions, query: string): Promise<SearchResult[]> {

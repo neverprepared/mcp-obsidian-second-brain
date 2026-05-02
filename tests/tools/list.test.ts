@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleStore } from '../../src/tools/store.js';
-import { handleList } from '../../src/tools/list.js';
+import { handleSearch } from '../../src/tools/search.js';
 import { handleUpdate } from '../../src/tools/update.js';
 import { getIndex } from '../../src/vault/search.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';
 
-describe('memory_list tool', () => {
+describe('memory_search listing mode (no query)', () => {
   let tmpDir: string;
   let originalVaultPath: string;
 
@@ -25,7 +25,7 @@ describe('memory_list tool', () => {
     await store('Alpha');
     await store('Beta', { para: 'areas', tags: [] });
 
-    const result = await handleList({});
+    const result = await handleSearch({});
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('Alpha');
     expect(result.content[0]!.text).toContain('Beta');
@@ -37,7 +37,7 @@ describe('memory_list tool', () => {
     const archivedId = [...getIndex().values()].find((e) => e.frontmatter.title === 'To Archive')!.frontmatter.id;
     await handleUpdate({ id: archivedId, status: 'archived' });
 
-    const result = await handleList({});
+    const result = await handleSearch({});
     expect(result.content[0]!.text).toContain('Active One');
     expect(result.content[0]!.text).not.toContain('To Archive');
   });
@@ -48,7 +48,7 @@ describe('memory_list tool', () => {
     const id = [...getIndex().values()].find((e) => e.frontmatter.title === 'Archived One')!.frontmatter.id;
     await handleUpdate({ id, status: 'archived' });
 
-    const result = await handleList({ include_archived: true });
+    const result = await handleSearch({ include_archived: true });
     expect(result.content[0]!.text).toContain('Archived One');
   });
 
@@ -56,7 +56,7 @@ describe('memory_list tool', () => {
     await store('In Resources', { para: 'resources' });
     await store('In Areas', { para: 'areas', tags: [] });
 
-    const result = await handleList({ para: 'resources' });
+    const result = await handleSearch({ para: 'resources' });
     expect(result.content[0]!.text).toContain('In Resources');
     expect(result.content[0]!.text).not.toContain('In Areas');
   });
@@ -66,10 +66,10 @@ describe('memory_list tool', () => {
     const id = [...getIndex().values()].find((e) => e.frontmatter.title === 'Active Memory')!.frontmatter.id;
     await handleUpdate({ id, status: 'stale' });
 
-    const activeResult = await handleList({ status: 'active' });
+    const activeResult = await handleSearch({ status: 'active' });
     expect(activeResult.content[0]!.text).not.toContain('Active Memory');
 
-    const staleResult = await handleList({ status: 'stale' });
+    const staleResult = await handleSearch({ status: 'stale' });
     expect(staleResult.content[0]!.text).toContain('Active Memory');
   });
 
@@ -77,7 +77,7 @@ describe('memory_list tool', () => {
     await store('Both Tags', { tags: ['alpha', 'beta'] });
     await store('Only Alpha', { tags: ['alpha'] });
 
-    const result = await handleList({ tags: ['alpha', 'beta'] });
+    const result = await handleSearch({ tags: ['alpha', 'beta'] });
     expect(result.content[0]!.text).toContain('Both Tags');
     expect(result.content[0]!.text).not.toContain('Only Alpha');
   });
@@ -87,20 +87,16 @@ describe('memory_list tool', () => {
     await store('Has Beta', { tags: ['beta'] });
     await store('Has Neither', { tags: ['gamma'] });
 
-    const result = await handleList({ tags: ['alpha', 'beta'], tag_mode: 'or' });
+    const result = await handleSearch({ tags: ['alpha', 'beta'], tag_mode: 'or' });
     expect(result.content[0]!.text).toContain('Has Alpha');
     expect(result.content[0]!.text).toContain('Has Beta');
     expect(result.content[0]!.text).not.toContain('Has Neither');
   });
 
-  it('applies updated_after date filter', async () => {
+  it('applies date filters', async () => {
     await store('Old Memory');
 
-    const futureResult = await handleList({ updated_after: '2099-01-01' });
-    // Should have no results (all entries are updated before 2099)
-    // But we can't easily force past dates, so just check updated_before works
-    const pastResult = await handleList({ updated_before: '2020-01-01' });
-    // Memory created now should NOT appear with a past cutoff
+    const pastResult = await handleSearch({ updated_before: '2020-01-01' });
     expect(pastResult.content[0]!.text).toBe('No memories found matching your criteria.');
   });
 
@@ -108,13 +104,14 @@ describe('memory_list tool', () => {
     for (let i = 0; i < 5; i++) {
       await store(`Memory ${i}`, { tags: [] });
     }
-    const result = await handleList({ limit: 2 });
-    const count = (result.content[0]!.text.match(/^- \*\*/gm) || []).length;
-    expect(count).toBe(2);
+    const result = await handleSearch({ limit: 2 });
+    // Count result entries (numbered list: "1. **...", "2. **...")
+    const matches = result.content[0]!.text.match(/^\d+\. \*\*/gm) || [];
+    expect(matches.length).toBe(2);
   });
 
   it('returns no-results message when empty', async () => {
-    const result = await handleList({ para: 'projects' });
+    const result = await handleSearch({ para: 'projects' });
     expect(result.content[0]!.text).toBe('No memories found matching your criteria.');
   });
 });
