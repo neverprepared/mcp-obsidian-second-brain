@@ -40,7 +40,7 @@ export async function handleRecall(args: unknown): Promise<CallToolResult> {
 
     const raw = await readMemoryFile(entry.filePath);
     const parsed = parseMemoryFile(raw);
-    const links = await discoverLinks(entry.slug);
+    const links = discoverLinks(entry.slug);
 
     // Update last_accessed (fire-and-forget)
     void updateLastAccessed(entry.frontmatter.id);

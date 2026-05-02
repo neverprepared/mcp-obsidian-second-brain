@@ -76,7 +76,7 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
       }
 
       // Default: direct links only (depth 1)
-      const links = await discoverLinks(sourceEntry.slug);
+      const links = discoverLinks(sourceEntry.slug);
 
       const outgoing = links.outgoing.length > 0
         ? `**Links to:** ${links.outgoing.map((s) => `[[${s}]]`).join(', ')}`

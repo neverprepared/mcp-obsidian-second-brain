@@ -90,10 +90,17 @@ describe('FTS5 index', () => {
     expect(searchFts('new', 10)).toHaveLength(2);
   });
 
-  it('handles prefix matching', () => {
+  it('exact match does not prefix-match by default', () => {
     upsertFts('id1', 'Authentication system', [], 'OAuth2 implementation details.');
-    // "auth" should match "authentication" via prefix
+    // "auth" should NOT match "authentication" without explicit *
     const results = searchFts('auth', 10);
+    expect(results).toHaveLength(0);
+  });
+
+  it('handles explicit prefix matching with trailing *', () => {
+    upsertFts('id1', 'Authentication system', [], 'OAuth2 implementation details.');
+    // "auth*" should match "authentication" via explicit prefix
+    const results = searchFts('auth*', 10);
     expect(results).toHaveLength(1);
   });
 

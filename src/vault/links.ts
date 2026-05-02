@@ -30,33 +30,29 @@ export interface LinkGraph {
   incoming: string[]; // Slugs that link to this memory
 }
 
-export async function discoverLinks(slug: string): Promise<LinkGraph> {
+export function discoverLinks(slug: string): LinkGraph {
   const index = getIndex();
   const outgoing: string[] = [];
   const incoming: string[] = [];
 
-  // Find outgoing links from this memory
+  // Find outgoing links from this memory's cached body + related array
   const entry = findBySlug(slug);
   if (entry) {
-    try {
-      const raw = await readMemoryFile(entry.filePath);
-      outgoing.push(...extractWikiLinks(raw));
-    } catch {
-      // Skip on read failure
+    // Use frontmatter related array (authoritative) plus wiki-links from cached body
+    const relatedSet = new Set(entry.frontmatter.related);
+    if (entry.body) {
+      for (const link of extractWikiLinks(entry.body)) {
+        relatedSet.add(link);
+      }
     }
+    outgoing.push(...relatedSet);
   }
 
-  // Find incoming links (backlinks) from all other memories
+  // Find incoming links from all other memories using in-memory index
   for (const other of index.values()) {
     if (other.slug === slug) continue;
-    try {
-      const raw = await readMemoryFile(other.filePath);
-      const links = extractWikiLinks(raw);
-      if (links.includes(slug)) {
-        incoming.push(other.slug);
-      }
-    } catch {
-      // Skip on read failure
+    if (other.frontmatter.related.includes(slug)) {
+      incoming.push(other.slug);
     }
   }
 
@@ -289,6 +285,54 @@ export async function removeBacklinks(deletedSlug: string): Promise<RemoveBackli
   }
 
   return { cleaned, failed };
+}
+
+/**
+ * Rename a slug across all memories: update `related` arrays and [[wiki-links]] in body content.
+ * Called when a memory's title changes and its slug changes.
+ */
+export async function renameSlugReferences(oldSlug: string, newSlug: string): Promise<{ updated: string[]; failed: string[] }> {
+  const index = getIndex();
+  const updated: string[] = [];
+  const failed: string[] = [];
+
+  for (const entry of index.values()) {
+    const fm = entry.frontmatter;
+    const hasRelatedRef = fm.related.includes(oldSlug);
+    const body = entry.body ?? '';
+    const hasBodyRef = body.includes(`[[${oldSlug}]]`);
+
+    if (!hasRelatedRef && !hasBodyRef) continue;
+
+    try {
+      const raw = await readMemoryFile(entry.filePath);
+      const parsed = parseMemoryFile(raw);
+
+      // Update related array
+      parsed.frontmatter.related = parsed.frontmatter.related.map((s) => s === oldSlug ? newSlug : s);
+
+      // Update [[wiki-links]] in body
+      const wikiLinkPattern = new RegExp(`\\[\\[${escapeRegex(oldSlug)}\\]\\]`, 'g');
+      const updatedContent = parsed.content.replace(wikiLinkPattern, `[[${newSlug}]]`);
+
+      await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
+
+      // Update in-memory index
+      entry.frontmatter.related = parsed.frontmatter.related;
+      entry.body = updatedContent;
+
+      updated.push(entry.slug);
+    } catch (err) {
+      logger.warn('Failed to rename slug reference', { from: entry.slug, oldSlug, newSlug, error: String(err) });
+      failed.push(entry.slug);
+    }
+  }
+
+  if (updated.length > 0) {
+    logger.info('Renamed slug references', { oldSlug, newSlug, updated: updated.length, failed: failed.length });
+  }
+
+  return { updated, failed };
 }
 
 /**

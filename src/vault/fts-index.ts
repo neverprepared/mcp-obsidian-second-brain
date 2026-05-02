@@ -112,18 +112,25 @@ export function rebuildFts(
 
 /**
  * Sanitize a user query for FTS5 MATCH syntax.
- * Wraps each word as a prefix token (word*) and joins with implicit AND.
+ * Joins terms with implicit AND. Prefix matching is opt-in via trailing *.
  * Strips FTS5 special characters to prevent syntax errors.
  */
 function sanitizeFtsQuery(query: string): string {
-  // Remove FTS5 operators and special chars
-  const cleaned = query.replace(/[":(){}[\]^~*+\-!/\\]/g, ' ').trim();
+  // Preserve trailing * on terms for explicit prefix matching, strip everything else
+  const cleaned = query.replace(/[":(){}[\]^~+\-!/\\]/g, ' ').trim();
   if (!cleaned) return '';
 
   const terms = cleaned
     .split(/\s+/)
     .filter((t) => t.length > 0)
-    .map((t) => `"${t}"*`); // prefix match with quoting for safety
+    .map((t) => {
+      const isPrefix = t.endsWith('*');
+      const word = isPrefix ? t.slice(0, -1) : t;
+      if (!word) return '';
+      // Quote for safety, add * only if user explicitly requested prefix
+      return isPrefix ? `"${word}"*` : `"${word}"`;
+    })
+    .filter((t) => t.length > 0);
 
   return terms.join(' ');
 }

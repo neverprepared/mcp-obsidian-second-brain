@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { handleStore } from '../../src/tools/store.js';
 import { handleUpdate } from '../../src/tools/update.js';
-import { getIndex, findBySlug } from '../../src/vault/search.js';
+import { handleLink } from '../../src/tools/link.js';
+import { getIndex, findBySlug, findById } from '../../src/vault/search.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';
 import { CONFIG } from '../../src/config.js';
 
@@ -91,5 +92,28 @@ describe('memory_update tool', () => {
   it('returns error for unknown id', async () => {
     const result = await handleUpdate({ id: 'mem_0_notexist', content: 'x' });
     expect(result.isError).toBe(true);
+  });
+
+  it('updates related references in linked notes when title/slug changes', async () => {
+    // Create two notes and link them
+    const idA = await storeAndGetId('Note Alpha', { tags: [] });
+    const idB = await storeAndGetId('Note Beta', { tags: [] });
+    await handleLink({ source_id: idA, target_id: idB });
+
+    // Verify B references A's slug
+    const bBefore = findById(idB)!;
+    expect(bBefore.frontmatter.related).toContain('note-alpha');
+
+    // Rename A — slug changes from "note-alpha" to "renamed-alpha"
+    await handleUpdate({ id: idA, title: 'Renamed Alpha' });
+
+    // B's related array should now reference the new slug
+    const bAfter = findById(idB)!;
+    expect(bAfter.frontmatter.related).toContain('renamed-alpha');
+    expect(bAfter.frontmatter.related).not.toContain('note-alpha');
+
+    // B's body wiki-links should also be updated
+    expect(bAfter.body).toContain('[[renamed-alpha]]');
+    expect(bAfter.body).not.toContain('[[note-alpha]]');
   });
 });
