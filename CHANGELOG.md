@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.9.0...v0.9.1) (2026-05-02)
+
+
+### Bug Fixes
+
+* repair cross-references on slug rename, use index for link discovery, exact FTS matching ([#11](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/11)) ([6a6324d](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/6a6324d04d2b61badea0bf18ac3d6522ebfa389e))
+
 ## [0.9.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.8.0...v0.9.0) (2026-05-02)
 
 
