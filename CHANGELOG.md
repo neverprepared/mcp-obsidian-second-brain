@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.9.1...v0.10.0) (2026-05-05)
+
+
+### Features
+
+* extract core/ module and add obsidian-mem CLI ([#13](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/13)) ([920b087](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/920b0870c4bb15231ce06662d0436d27a9bcc481))
+
 ## [0.9.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.9.0...v0.9.1) (2026-05-02)
 
 
