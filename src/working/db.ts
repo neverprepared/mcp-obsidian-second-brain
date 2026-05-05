@@ -120,6 +120,17 @@ export function initWorkingDb(): void {
   logger.info('Working memory SQLite initialized');
 }
 
+/**
+ * Idempotent variant: only initializes if no DB exists yet. Use from app
+ * lifecycle (server / CLI) to avoid wiping task state when init runs more
+ * than once in a process. Tests that need a clean slate should call
+ * initWorkingDb() directly.
+ */
+export function ensureWorkingDb(): void {
+  if (db) return;
+  initWorkingDb();
+}
+
 function requireDb(): Database.Database {
   if (!db) throw new Error('Working memory DB not initialized — call initWorkingDb() first');
   return db;

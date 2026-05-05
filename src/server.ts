@@ -5,13 +5,8 @@ import {
   CallToolRequestSchema,
   type CallToolRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import { logger } from './shared/logger.js';
-import { ensureVaultStructure } from './para/structure.js';
-import { buildIndex } from './vault/search.js';
-import { initWorkingDb, cleanupSnapshot } from './working/db.js';
-import { initVectorIndex, syncVectorIndex } from './vault/vector-index.js';
+import { initialize, shutdown, logger, CONFIG } from './core/index.js';
 import { getToolDefinitions, handleToolCall } from './tools/index.js';
-import { CONFIG } from './config.js';
 
 const SERVER_INFO = {
   name: 'mcp-obsidian-second-brain',
@@ -24,21 +19,7 @@ export async function startServer(): Promise<void> {
     vaultPath: CONFIG.VAULT_PATH,
   });
 
-  // Ensure vault structure exists
-  await ensureVaultStructure();
-
-  // Initialize vector + FTS index before building the in-memory index,
-  // because buildIndex() calls rebuildFts() which needs the DB connection.
-  await initVectorIndex();
-
-  // Build in-memory index (also populates FTS5)
-  await buildIndex();
-
-  // Initialize session-scoped working memory
-  initWorkingDb();
-
-  // Background sync embeddings for any notes missing vectors
-  syncVectorIndex();
+  await initialize();
 
   const server = new Server(
     {
@@ -76,14 +57,14 @@ export async function startServer(): Promise<void> {
 
   process.on('SIGINT', async () => {
     logger.info('Received SIGINT, shutting down');
-    cleanupSnapshot();
+    shutdown();
     await server.close();
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
     logger.info('Received SIGTERM, shutting down');
-    cleanupSnapshot();
+    shutdown();
     await server.close();
     process.exit(0);
   });
