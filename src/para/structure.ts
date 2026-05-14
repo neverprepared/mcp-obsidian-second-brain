@@ -8,6 +8,10 @@ export async function ensureVaultStructure(): Promise<void> {
 
   const dirs = [
     ...CONFIG.PARA_FOLDERS.map((f) => path.join(vaultPath, f)),
+    path.join(vaultPath, CONFIG.LIBRARY_FOLDER),
+    ...CONFIG.LIBRARY_SUBFOLDERS.map((s) =>
+      path.join(vaultPath, CONFIG.LIBRARY_FOLDER, s),
+    ),
     path.join(vaultPath, CONFIG.DAILY_FOLDER),
     path.join(vaultPath, CONFIG.INDEX_FOLDER),
     path.join(vaultPath, CONFIG.TEMPLATE_FOLDER),
