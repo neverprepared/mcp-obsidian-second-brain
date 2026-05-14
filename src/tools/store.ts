@@ -100,8 +100,7 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
 
     await writeMemoryFile(filePath, fileContent);
 
-    // Update index (include body for content search cache)
-    indexEntry(id, { frontmatter, filePath, slug, body });
+    indexEntry(id, { frontmatter, filePath, slug }, body);
 
     // Embed and index for vector search (fire-and-forget)
     void embedText(buildEmbedText(input.title, input.tags, input.content)).then((embedding) => {

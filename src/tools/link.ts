@@ -76,7 +76,7 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
       }
 
       // Default: direct links only (depth 1)
-      const links = discoverLinks(sourceEntry.slug);
+      const links = await discoverLinks(sourceEntry.slug);
 
       const outgoing = links.outgoing.length > 0
         ? `**Links to:** ${links.outgoing.map((s) => `[[${s}]]`).join(', ')}`
@@ -116,10 +116,11 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
       sourceEntry.filePath,
       serializeMemory(sourceParsed.frontmatter, updatedSourceContent)
     );
-    updateIndex(sourceParsed.frontmatter.id, {
-      ...sourceEntry,
-      frontmatter: sourceParsed.frontmatter,
-    });
+    updateIndex(
+      sourceParsed.frontmatter.id,
+      { ...sourceEntry, frontmatter: sourceParsed.frontmatter },
+      updatedSourceContent,
+    );
 
     // Add backlink target -> source
     const targetRaw = await readMemoryFile(targetEntry.filePath);
@@ -133,10 +134,11 @@ export async function handleLink(args: unknown): Promise<CallToolResult> {
       targetEntry.filePath,
       serializeMemory(targetParsed.frontmatter, updatedTargetContent)
     );
-    updateIndex(targetParsed.frontmatter.id, {
-      ...targetEntry,
-      frontmatter: targetParsed.frontmatter,
-    });
+    updateIndex(
+      targetParsed.frontmatter.id,
+      { ...targetEntry, frontmatter: targetParsed.frontmatter },
+      updatedTargetContent,
+    );
 
     logger.info('Linked memories', {
       source: sourceEntry.slug,

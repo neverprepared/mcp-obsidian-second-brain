@@ -124,8 +124,7 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       await writeMemoryFile(newFilePath, fileContent);
     }
 
-    // Update index (include body for content search cache)
-    updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug, body: content });
+    updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug }, content);
 
     // Repair references in other notes when slug changes
     if (newSlug !== entry.slug) {
