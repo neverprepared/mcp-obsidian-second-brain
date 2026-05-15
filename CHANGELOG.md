@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.0...v0.11.1) (2026-05-15)
+
+
+### Bug Fixes
+
+* keep FTS and vector index in sync across all mutation paths ([#19](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/19)) ([ccb0433](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/ccb04333af42ef73a5d84eeef6c95aa1589dde49))
+
 ## [0.11.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.10.0...v0.11.0) (2026-05-15)
 
 
