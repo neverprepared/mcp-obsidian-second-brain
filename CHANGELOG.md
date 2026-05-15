@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.10.0...v0.11.0) (2026-05-15)
+
+
+### Features
+
+* add Library/ vault folder for human-readable docs ([#15](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/15)) ([55b5518](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/55b55185f8338a709784eb4ca1cbcf06a56ae1f5))
+
+
+### Performance Improvements
+
+* drop in-memory body cache from index ([#17](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/17)) ([4130efc](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/4130efc267f764789c53249bcc515380f8edf0bd))
+
 ## [0.10.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.9.1...v0.10.0) (2026-05-05)
 
 
