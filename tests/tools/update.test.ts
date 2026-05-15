@@ -4,7 +4,7 @@ import path from 'node:path';
 import { handleStore } from '../../src/tools/store.js';
 import { handleUpdate } from '../../src/tools/update.js';
 import { handleLink } from '../../src/tools/link.js';
-import { getIndex, findBySlug, findById } from '../../src/vault/search.js';
+import { getIndex, findBySlug, findById, searchMemories } from '../../src/vault/search.js';
 import { setupTestVault, teardownTestVault } from '../helpers/vault.js';
 import { CONFIG } from '../../src/config.js';
 
@@ -118,5 +118,22 @@ describe('memory_update tool', () => {
     const bFileContent = await fs.readFile(bAfter.filePath, 'utf-8');
     expect(bFileContent).toContain('[[renamed-alpha]]');
     expect(bFileContent).not.toContain('[[note-alpha]]');
+  });
+
+  it('FTS reflects body changes after slug rename', async () => {
+    // A backlinking note B will end up with the renamed slug as a wiki-link in its body.
+    // If renameSlugReferences forgets to re-index, FTS still indexes the old slug
+    // and a search for the new slug term won't surface B.
+    const idA = await storeAndGetId('Source Note', { tags: [] });
+    const idB = await storeAndGetId('Target Note', { tags: [] });
+    await handleLink({ source_id: idA, target_id: idB });
+
+    // Rename A to a title with a uniquely searchable token only present after rename.
+    await handleUpdate({ id: idA, title: 'Renamed Zorblax' });
+
+    // FTS should now find B by the new token, because B's body has [[renamed-zorblax]].
+    const results = await searchMemories({ query: 'zorblax', limit: 10 });
+    const slugs = results.map((r) => r.entry.slug);
+    expect(slugs).toContain('target-note');
   });
 });

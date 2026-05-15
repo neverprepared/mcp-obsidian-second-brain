@@ -8,8 +8,6 @@ import { slugFromTitle, deduplicateSlug } from '../vault/naming.js';
 import { paraFolderFromCategory, CONFIG } from '../config.js';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
-import { embedText, buildEmbedText } from '../vault/embeddings.js';
-import { upsertVector } from '../vault/vector-index.js';
 import { renameSlugReferences } from '../vault/links.js';
 import path from 'node:path';
 
@@ -129,13 +127,6 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
     // Repair references in other notes when slug changes
     if (newSlug !== entry.slug) {
       await renameSlugReferences(entry.slug, newSlug);
-    }
-
-    // Re-embed if title, content, or tags changed (fire-and-forget)
-    if (input.title !== undefined || input.content !== undefined || input.tags !== undefined || input.add_tags !== undefined) {
-      void embedText(buildEmbedText(fm.title, fm.tags, content)).then((embedding) => {
-        if (embedding) upsertVector(fm.id, embedding);
-      });
     }
 
     logger.info('Updated memory', { id: fm.id, slug: newSlug });

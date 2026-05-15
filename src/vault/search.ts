@@ -3,8 +3,8 @@ import { listAllMemoryFiles, readMemoryFile, writeMemoryFile } from './filesyste
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { nowISO, isStale } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
-import { embedText } from './embeddings.js';
-import { isVectorIndexReady, searchVectors } from './vector-index.js';
+import { embedText, buildEmbedText } from './embeddings.js';
+import { isVectorIndexReady, searchVectors, upsertVector, deleteVector } from './vector-index.js';
 import { isFtsReady, rebuildFts, searchFts, upsertFts, deleteFts } from './fts-index.js';
 
 export interface IndexEntry {
@@ -82,6 +82,12 @@ export function indexEntry(id: string, entry: IndexEntry, body: string): void {
 
   // Keep FTS in sync. Caller must pass the current body (they just wrote it).
   upsertFts(id, entry.frontmatter.title, entry.frontmatter.tags, body);
+
+  // Vector update fire-and-forget so FTS and vectors stay in sync without
+  // forcing every caller to remember to embed.
+  void embedText(buildEmbedText(entry.frontmatter.title, entry.frontmatter.tags, body)).then((embedding) => {
+    if (embedding) upsertVector(id, embedding);
+  });
 }
 
 export function removeFromIndex(id: string): void {
@@ -92,6 +98,7 @@ export function removeFromIndex(id: string): void {
   }
   memoryIndex.delete(id);
   deleteFts(id);
+  deleteVector(id);
 }
 
 export function findById(id: string): IndexEntry | undefined {
