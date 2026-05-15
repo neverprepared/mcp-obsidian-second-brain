@@ -9,7 +9,10 @@
 import { ensureVaultStructure } from '../para/structure.js';
 import { buildIndex } from '../vault/search.js';
 import { initVectorIndex, syncVectorIndex } from '../vault/vector-index.js';
+import { renameSlugReferences } from '../vault/links.js';
+import { readRenameJournal, deleteRenameJournal } from '../vault/rename-journal.js';
 import { ensureWorkingDb, cleanupSnapshot } from '../working/db.js';
+import { logger } from '../shared/logger.js';
 
 export { CONFIG, DEFAULT_TTL_DAYS, paraFolderFromCategory } from '../config.js';
 export type { ParaFolder } from '../config.js';
@@ -45,8 +48,29 @@ export async function initialize(): Promise<void> {
   await ensureVaultStructure();
   await initVectorIndex();
   await buildIndex();
+  await recoverInflightRename();
   ensureWorkingDb();
   syncVectorIndex();
+}
+
+/**
+ * If a rename journal exists from a prior crashed run, re-apply the backlink
+ * rewrite. renameSlugReferences is idempotent (files without the old slug are
+ * skipped), so re-running is safe whether the prior run completed partially or
+ * not at all.
+ */
+async function recoverInflightRename(): Promise<void> {
+  const journal = await readRenameJournal();
+  if (!journal) return;
+  logger.info('Recovering in-flight slug rename from journal', { ...journal });
+  try {
+    const result = await renameSlugReferences(journal.from, journal.to);
+    logger.info('Rename recovery complete', { ...journal, updated: result.updated.length, failed: result.failed.length });
+  } catch (err) {
+    logger.warn('Rename recovery failed; leaving journal in place', { ...journal, error: String(err) });
+    return;
+  }
+  await deleteRenameJournal();
 }
 
 /**
