@@ -1,5 +1,5 @@
 import { readMemoryFile, writeMemoryFile } from './filesystem.js';
-import { getIndex, findBySlug } from './search.js';
+import { getIndex, findBySlug, indexEntry } from './search.js';
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { logger } from '../shared/logger.js';
 import { escapeRegex } from '../shared/utils.js';
@@ -145,6 +145,13 @@ export async function autoLinkRelated(
 
     await writeMemoryFile(newFilePath, serializeMemory(newParsed.frontmatter, newContent));
 
+    // Re-index the new memory so FTS and vectors reflect the appended Related section.
+    indexEntry(
+      newParsed.frontmatter.id,
+      { frontmatter: newParsed.frontmatter, filePath: newFilePath, slug: newSlug },
+      newContent,
+    );
+
     // 2. Update each related memory: add backlink to the new memory (parallel writes)
     await Promise.all(relatedSlugs.map(async (slug) => {
       try {
@@ -168,8 +175,11 @@ export async function autoLinkRelated(
 
         await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-        // Update in-memory index (body lives on disk)
-        entry.frontmatter.related = parsed.frontmatter.related;
+        indexEntry(
+          parsed.frontmatter.id,
+          { frontmatter: parsed.frontmatter, filePath: entry.filePath, slug: entry.slug },
+          updatedContent,
+        );
 
         linked.push(slug);
       } catch (err) {
@@ -275,8 +285,11 @@ export async function removeBacklinks(deletedSlug: string): Promise<RemoveBackli
 
       await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-      // Update in-memory index (body lives on disk)
-      entry.frontmatter.related = parsed.frontmatter.related;
+      indexEntry(
+        parsed.frontmatter.id,
+        { frontmatter: parsed.frontmatter, filePath: entry.filePath, slug: entry.slug },
+        updatedContent,
+      );
 
       cleaned.push(entry.slug);
     } catch (err) {
@@ -312,8 +325,11 @@ export async function renameSlugReferences(oldSlug: string, newSlug: string): Pr
 
       await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-      // Update in-memory index (body lives on disk)
-      entry.frontmatter.related = parsed.frontmatter.related;
+      indexEntry(
+        parsed.frontmatter.id,
+        { frontmatter: parsed.frontmatter, filePath: entry.filePath, slug: entry.slug },
+        updatedContent,
+      );
 
       updated.push(entry.slug);
     } catch (err) {

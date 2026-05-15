@@ -4,7 +4,6 @@ import { DeleteInputSchema } from '../schemas/tools.js';
 import { findById, removeFromIndex } from '../vault/search.js';
 import { deleteMemoryFile } from '../vault/filesystem.js';
 import { removeBacklinks } from '../vault/links.js';
-import { deleteVector } from '../vault/vector-index.js';
 import { logger } from '../shared/logger.js';
 
 export const deleteToolDefinition = {
@@ -38,7 +37,6 @@ export async function handleDelete(args: unknown): Promise<CallToolResult> {
 
     await deleteMemoryFile(entry.filePath);
     removeFromIndex(input.id);
-    deleteVector(input.id);
 
     // Clean up backlinks in other memories
     const { cleaned, failed } = await removeBacklinks(deletedSlug);
