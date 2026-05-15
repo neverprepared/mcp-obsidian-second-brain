@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import { CONFIG } from '../config.js';
-import { getIndex } from './search.js';
+import { getIndex, type IndexEntry } from './search.js';
 import { readMemoryFile } from './filesystem.js';
 import { parseMemoryFile } from './frontmatter.js';
 import { embedBatch, buildEmbedText, isEmbeddingAvailable } from './embeddings.js';
@@ -354,18 +354,50 @@ export function syncVectorIndex(): void {
 
       try {
         const index = getIndex();
+
+        // Categorize vec_map rows against the current in-memory index.
+        const vecRows = vecDb!.prepare('SELECT id, updated FROM vec_map').all() as Array<{ id: string; updated: string }>;
+        const orphans: string[] = [];
+        const stale: string[] = [];
+        for (const row of vecRows) {
+          const entry = index.get(row.id);
+          if (!entry) {
+            orphans.push(row.id);
+            continue;
+          }
+          // SQLite datetime() is UTC (no tz suffix); frontmatter.updated is ISO with Z.
+          // Date.parse handles both. Treat equal timestamps as fresh.
+          if (Date.parse(row.updated) < Date.parse(entry.frontmatter.updated)) {
+            stale.push(row.id);
+          }
+        }
+
+        // 1. Delete orphans — vectors for memories that no longer exist in the index.
+        for (const id of orphans) {
+          deleteVector(id);
+        }
+        if (orphans.length > 0) {
+          logger.info('Vector index orphans deleted', { count: orphans.length });
+        }
+
         const embeddedIds = getEmbeddedIds();
         const missing = [...index.entries()].filter(([id]) => !embeddedIds.has(id));
 
-        if (missing.length === 0) {
+        if (missing.length === 0 && stale.length === 0) {
           logger.info('Vector index up to date', { count: embeddedIds.size });
           return;
         }
 
-        logger.info('Syncing vector index', { missing: missing.length, total: index.size });
+        // 2. Build the work list: missing (new) + stale (re-embed).
+        type Work = { id: string; entry: IndexEntry };
+        const work: Work[] = [
+          ...missing.map(([id, entry]) => ({ id, entry })),
+          ...stale.map((id) => ({ id, entry: index.get(id)! })),
+        ];
 
-        // Build embed texts for all missing notes — read bodies from disk in parallel.
-        const texts = await Promise.all(missing.map(async ([, entry]) => {
+        logger.info('Syncing vector index', { missing: missing.length, stale: stale.length, total: index.size });
+
+        const texts = await Promise.all(work.map(async ({ entry }) => {
           try {
             const raw = await readMemoryFile(entry.filePath);
             const parsed = parseMemoryFile(raw);
@@ -378,24 +410,21 @@ export function syncVectorIndex(): void {
 
         const embeddings = await embedBatch(texts);
 
-        // Batch upserts in a single transaction for performance and atomicity
+        // 3. Upsert in batch. upsertVector handles both insert and replace.
         let synced = 0;
-        const tx = vecDb!.transaction(() => {
-          for (let i = 0; i < missing.length; i++) {
-            const [id] = missing[i]!;
-            const embedding = embeddings[i];
-            if (embedding) {
-              const buf = Buffer.from(new Float32Array(embedding).buffer);
-              const nextRowid = (vecDb!.prepare('SELECT COALESCE(MAX(vec_rowid), 0) + 1 as n FROM vec_map').get() as { n: number }).n;
-              vecDb!.prepare('INSERT INTO vec_embeddings(rowid, embedding) VALUES (?, ?)').run(BigInt(nextRowid), buf);
-              vecDb!.prepare("INSERT INTO vec_map(id, vec_rowid, updated) VALUES (?, ?, datetime('now'))").run(id, nextRowid);
-              synced++;
-            }
+        for (let i = 0; i < work.length; i++) {
+          const embedding = embeddings[i];
+          if (embedding) {
+            upsertVector(work[i]!.id, embedding);
+            synced++;
           }
-        });
-        tx();
+        }
 
-        logger.info('Vector index sync complete', { synced, failed: missing.length - synced });
+        logger.info('Vector index sync complete', {
+          synced,
+          failed: work.length - synced,
+          orphansDeleted: orphans.length,
+        });
       } finally {
         releaseSyncLock();
       }
