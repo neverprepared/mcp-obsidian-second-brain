@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import { CONFIG } from '../config.js';
 import { getIndex } from './search.js';
+import { readMemoryFile } from './filesystem.js';
+import { parseMemoryFile } from './frontmatter.js';
 import { embedBatch, buildEmbedText, isEmbeddingAvailable } from './embeddings.js';
 import { logger } from '../shared/logger.js';
 import { initFts, isFtsReady } from './fts-index.js';
@@ -362,14 +364,17 @@ export function syncVectorIndex(): void {
 
         logger.info('Syncing vector index', { missing: missing.length, total: index.size });
 
-        // Build embed texts for all missing notes
-        const texts = missing.map(([, entry]) =>
-          buildEmbedText(
-            entry.frontmatter.title,
-            entry.frontmatter.tags,
-            entry.body ?? '',
-          )
-        );
+        // Build embed texts for all missing notes — read bodies from disk in parallel.
+        const texts = await Promise.all(missing.map(async ([, entry]) => {
+          try {
+            const raw = await readMemoryFile(entry.filePath);
+            const parsed = parseMemoryFile(raw);
+            return buildEmbedText(entry.frontmatter.title, entry.frontmatter.tags, parsed.content);
+          } catch (err) {
+            logger.warn('Failed to read body for embedding', { path: entry.filePath, error: String(err) });
+            return buildEmbedText(entry.frontmatter.title, entry.frontmatter.tags, '');
+          }
+        }));
 
         const embeddings = await embedBatch(texts);
 

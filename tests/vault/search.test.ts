@@ -67,34 +67,30 @@ describe('vault/search', () => {
   });
 
   describe('searchMemories', () => {
-    it('scores title match +10', async () => {
+    it('title match outranks body match', async () => {
       await storeMemory({ title: 'UniqueTitle Foo' });
       await storeMemory({ title: 'Other Memory', content: 'UniqueTitle in body', tags: ['other'] });
 
       const results = await searchMemories({ query: 'UniqueTitle', limit: 10 });
       expect(results.length).toBeGreaterThan(0);
-      // Title match should be highest scored
       expect(results[0]!.entry.frontmatter.title).toBe('UniqueTitle Foo');
-      expect(results[0]!.score).toBeGreaterThanOrEqual(10);
     });
 
-    it('scores tag match +5', async () => {
+    it('returns tag matches', async () => {
       await storeMemory({ title: 'Tag Memory', tags: ['specialtag'] });
 
       const results = await searchMemories({ query: 'specialtag', limit: 10 });
       expect(results.length).toBeGreaterThan(0);
       const tagResult = results.find((r) => r.entry.frontmatter.title === 'Tag Memory');
       expect(tagResult).toBeDefined();
-      expect(tagResult!.score).toBeGreaterThanOrEqual(5);
     });
 
-    it('scores content match +1', async () => {
+    it('returns body matches with snippet', async () => {
       await storeMemory({ title: 'Content Mem', content: 'unique_body_term here', tags: [] });
 
       const results = await searchMemories({ query: 'unique_body_term', limit: 10 });
       const match = results.find((r) => r.entry.frontmatter.title === 'Content Mem');
       expect(match).toBeDefined();
-      expect(match!.score).toBeGreaterThanOrEqual(1);
       expect(match!.snippet).toContain('unique_body_term');
     });
 

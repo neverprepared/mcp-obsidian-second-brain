@@ -30,20 +30,23 @@ export interface LinkGraph {
   incoming: string[]; // Slugs that link to this memory
 }
 
-export function discoverLinks(slug: string): LinkGraph {
+export async function discoverLinks(slug: string): Promise<LinkGraph> {
   const index = getIndex();
   const outgoing: string[] = [];
   const incoming: string[] = [];
 
-  // Find outgoing links from this memory's cached body + related array
+  // Find outgoing links: frontmatter.related (authoritative) plus wiki-links read from disk
   const entry = findBySlug(slug);
   if (entry) {
-    // Use frontmatter related array (authoritative) plus wiki-links from cached body
     const relatedSet = new Set(entry.frontmatter.related);
-    if (entry.body) {
-      for (const link of extractWikiLinks(entry.body)) {
+    try {
+      const raw = await readMemoryFile(entry.filePath);
+      const parsed = parseMemoryFile(raw);
+      for (const link of extractWikiLinks(parsed.content)) {
         relatedSet.add(link);
       }
+    } catch (err) {
+      logger.warn('Failed to read body for link discovery', { slug, error: String(err) });
     }
     outgoing.push(...relatedSet);
   }
@@ -165,9 +168,8 @@ export async function autoLinkRelated(
 
         await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-        // Update in-memory index
+        // Update in-memory index (body lives on disk)
         entry.frontmatter.related = parsed.frontmatter.related;
-        entry.body = updatedContent;
 
         linked.push(slug);
       } catch (err) {
@@ -273,9 +275,8 @@ export async function removeBacklinks(deletedSlug: string): Promise<RemoveBackli
 
       await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-      // Update in-memory index
+      // Update in-memory index (body lives on disk)
       entry.frontmatter.related = parsed.frontmatter.related;
-      entry.body = updatedContent;
 
       cleaned.push(entry.slug);
     } catch (err) {
@@ -297,29 +298,22 @@ export async function renameSlugReferences(oldSlug: string, newSlug: string): Pr
   const failed: string[] = [];
 
   for (const entry of index.values()) {
-    const fm = entry.frontmatter;
-    const hasRelatedRef = fm.related.includes(oldSlug);
-    const body = entry.body ?? '';
-    const hasBodyRef = body.includes(`[[${oldSlug}]]`);
-
-    if (!hasRelatedRef && !hasBodyRef) continue;
-
     try {
       const raw = await readMemoryFile(entry.filePath);
       const parsed = parseMemoryFile(raw);
 
-      // Update related array
-      parsed.frontmatter.related = parsed.frontmatter.related.map((s) => s === oldSlug ? newSlug : s);
+      const hasRelatedRef = parsed.frontmatter.related.includes(oldSlug);
+      const hasBodyRef = parsed.content.includes(`[[${oldSlug}]]`);
+      if (!hasRelatedRef && !hasBodyRef) continue;
 
-      // Update [[wiki-links]] in body
+      parsed.frontmatter.related = parsed.frontmatter.related.map((s) => s === oldSlug ? newSlug : s);
       const wikiLinkPattern = new RegExp(`\\[\\[${escapeRegex(oldSlug)}\\]\\]`, 'g');
       const updatedContent = parsed.content.replace(wikiLinkPattern, `[[${newSlug}]]`);
 
       await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
 
-      // Update in-memory index
+      // Update in-memory index (body lives on disk)
       entry.frontmatter.related = parsed.frontmatter.related;
-      entry.body = updatedContent;
 
       updated.push(entry.slug);
     } catch (err) {

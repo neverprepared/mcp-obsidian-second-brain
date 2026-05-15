@@ -11,7 +11,6 @@ export interface IndexEntry {
   frontmatter: Frontmatter;
   filePath: string;
   slug: string;
-  body?: string; // cached markdown body (without frontmatter)
 }
 
 let memoryIndex: Map<string, IndexEntry> = new Map();
@@ -24,6 +23,9 @@ export async function buildIndex(): Promise<void> {
   const newTitleIndex = new Map<string, string>();
   const files = await listAllMemoryFiles();
 
+  // Collect bodies transiently during the walk to feed FTS, then drop.
+  const ftsEntries: Array<{ id: string; title: string; tags: string[]; body: string }> = [];
+
   for (const entry of files) {
     try {
       const raw = await readMemoryFile(entry.filePath);
@@ -33,10 +35,15 @@ export async function buildIndex(): Promise<void> {
         frontmatter: parsed.frontmatter,
         filePath: entry.filePath,
         slug: entry.slug,
-        body: parsed.content,
       });
       newSlugIndex.set(entry.slug, id);
       newTitleIndex.set(parsed.frontmatter.title.toLowerCase(), id);
+      ftsEntries.push({
+        id,
+        title: parsed.frontmatter.title,
+        tags: parsed.frontmatter.tags,
+        body: parsed.content,
+      });
     } catch (err) {
       logger.warn('Failed to index memory file', {
         path: entry.filePath,
@@ -49,14 +56,7 @@ export async function buildIndex(): Promise<void> {
   slugIndex = newSlugIndex;
   titleIndex = newTitleIndex;
 
-  // Populate FTS5 index from loaded entries
   if (isFtsReady()) {
-    const ftsEntries = [...newIndex.values()].map((e) => ({
-      id: e.frontmatter.id,
-      title: e.frontmatter.title,
-      tags: e.frontmatter.tags,
-      body: e.body ?? '',
-    }));
     rebuildFts(ftsEntries);
   }
 
@@ -67,7 +67,7 @@ export function getIndex(): Map<string, IndexEntry> {
   return memoryIndex;
 }
 
-export function indexEntry(id: string, entry: IndexEntry): void {
+export function indexEntry(id: string, entry: IndexEntry, body: string): void {
   // Clean up old slug/title from reverse indexes if changed
   const existing = memoryIndex.get(id);
   if (existing) {
@@ -80,8 +80,8 @@ export function indexEntry(id: string, entry: IndexEntry): void {
   slugIndex.set(entry.slug, id);
   titleIndex.set(entry.frontmatter.title.toLowerCase(), id);
 
-  // Keep FTS in sync
-  upsertFts(id, entry.frontmatter.title, entry.frontmatter.tags, entry.body ?? '');
+  // Keep FTS in sync. Caller must pass the current body (they just wrote it).
+  upsertFts(id, entry.frontmatter.title, entry.frontmatter.tags, body);
 }
 
 export function removeFromIndex(id: string): void {
@@ -183,30 +183,20 @@ export function passesFilters(entry: IndexEntry, options: Omit<SearchOptions, 'q
   return true;
 }
 
-/** Score an entry against a keyword query. Returns 0 if no match. */
+/**
+ * Score an entry against a keyword query. Returns 0 if no match.
+ * Only used as a degraded fallback when FTS is unavailable; scores title and tags only
+ * (body would require a disk read on every entry during search).
+ */
 function scoreKeyword(entry: IndexEntry, query: string): { score: number; snippet?: string } {
   const fm = entry.frontmatter;
   const queryLower = query.toLowerCase();
   let score = 0;
-  let snippet: string | undefined;
 
   if (fm.title.toLowerCase().includes(queryLower)) score += 10;
   if (fm.tags.some((t) => t.toLowerCase().includes(queryLower))) score += 5;
 
-  const bodyText = entry.body ?? '';
-  const bodyLower = bodyText.toLowerCase();
-  const idx = bodyLower.indexOf(queryLower);
-  if (idx !== -1) {
-    score += 1;
-    const start = Math.max(0, idx - 50);
-    const end = Math.min(bodyText.length, idx + query.length + 50);
-    snippet =
-      (start > 0 ? '...' : '') +
-      bodyText.slice(start, end).trim() +
-      (end < bodyText.length ? '...' : '');
-  }
-
-  return { score, snippet };
+  return { score };
 }
 
 /** Apply sort_by to results. 'relevance' keeps existing score-based order. */

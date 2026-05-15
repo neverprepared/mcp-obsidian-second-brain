@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import Database from 'better-sqlite3';
 import { CONFIG } from '../../src/config.js';
 import { buildIndex } from '../../src/vault/search.js';
+import { initFts } from '../../src/vault/fts-index.js';
 
 export async function setupTestVault(): Promise<{ tmpDir: string; originalVaultPath: string }> {
   const originalVaultPath = CONFIG.VAULT_PATH;
@@ -15,6 +17,9 @@ export async function setupTestVault(): Promise<{ tmpDir: string; originalVaultP
     await fs.mkdir(path.join(tmpDir, folder), { recursive: true });
   }
   await fs.mkdir(path.join(tmpDir, CONFIG.DAILY_FOLDER), { recursive: true });
+
+  // Initialize FTS5 so tests run the production search path (not the degraded fallback)
+  initFts(new Database(':memory:'));
 
   await buildIndex();
 

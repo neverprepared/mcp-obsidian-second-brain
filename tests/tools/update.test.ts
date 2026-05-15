@@ -31,7 +31,8 @@ describe('memory_update tool', () => {
     expect(result.isError).toBeUndefined();
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.id === id)!;
-    expect(entry.body).toContain('New content.');
+    const fileContent = await fs.readFile(entry.filePath, 'utf-8');
+    expect(fileContent).toContain('New content.');
   });
 
   it('updates content (append mode)', async () => {
@@ -39,8 +40,9 @@ describe('memory_update tool', () => {
     await handleUpdate({ id, content: 'Appended.', append: true });
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.id === id)!;
-    expect(entry.body).toContain('Original content.');
-    expect(entry.body).toContain('Appended.');
+    const fileContent = await fs.readFile(entry.filePath, 'utf-8');
+    expect(fileContent).toContain('Original content.');
+    expect(fileContent).toContain('Appended.');
   });
 
   it('replaces tags', async () => {
@@ -112,8 +114,9 @@ describe('memory_update tool', () => {
     expect(bAfter.frontmatter.related).toContain('renamed-alpha');
     expect(bAfter.frontmatter.related).not.toContain('note-alpha');
 
-    // B's body wiki-links should also be updated
-    expect(bAfter.body).toContain('[[renamed-alpha]]');
-    expect(bAfter.body).not.toContain('[[note-alpha]]');
+    // B's body wiki-links should also be updated (read from disk)
+    const bFileContent = await fs.readFile(bAfter.filePath, 'utf-8');
+    expect(bFileContent).toContain('[[renamed-alpha]]');
+    expect(bFileContent).not.toContain('[[note-alpha]]');
   });
 });
