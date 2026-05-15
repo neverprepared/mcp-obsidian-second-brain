@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.1...v0.11.2) (2026-05-15)
+
+
+### Bug Fixes
+
+* journal slug renames so partial batches recover on next startup ([#21](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/21)) ([5cb737b](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/5cb737be2a159c784bfd766940812e24f0e6cf1e))
+
 ## [0.11.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.0...v0.11.1) (2026-05-15)
 
 
