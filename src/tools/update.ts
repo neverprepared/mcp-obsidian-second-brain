@@ -9,6 +9,7 @@ import { paraFolderFromCategory, CONFIG } from '../config.js';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 import { renameSlugReferences } from '../vault/links.js';
+import { writeRenameJournal, deleteRenameJournal } from '../vault/rename-journal.js';
 import path from 'node:path';
 
 export const updateToolDefinition = {
@@ -114,6 +115,13 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       newFilePath = memoryFilePath(fm.para, newSlug);
     }
 
+    // Journal the rename intent BEFORE any disk changes so a crash anywhere
+    // between here and the end of renameSlugReferences is recoverable.
+    const slugChanging = newSlug !== entry.slug;
+    if (slugChanging) {
+      await writeRenameJournal(entry.slug, newSlug);
+    }
+
     if (newFilePath !== entry.filePath) {
       await writeMemoryFile(newFilePath, fileContent);
       const fs = await import('node:fs/promises');
@@ -124,9 +132,9 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
 
     updateIndex(fm.id, { frontmatter: fm, filePath: newFilePath, slug: newSlug }, content);
 
-    // Repair references in other notes when slug changes
-    if (newSlug !== entry.slug) {
+    if (slugChanging) {
       await renameSlugReferences(entry.slug, newSlug);
+      await deleteRenameJournal();
     }
 
     logger.info('Updated memory', { id: fm.id, slug: newSlug });
