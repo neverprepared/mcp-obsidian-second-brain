@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.2...v0.12.0) (2026-05-15)
+
+
+### Features
+
+* add Scratch/ subfolder to Library for in-progress documents ([#23](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/23)) ([2ccf8b2](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/2ccf8b2527b2830153d3744e51be1c194dda041c))
+
 ## [0.11.2](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.1...v0.11.2) (2026-05-15)
 
 
