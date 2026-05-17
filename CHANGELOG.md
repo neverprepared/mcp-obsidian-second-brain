@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.12.0...v0.13.0) (2026-05-17)
+
+
+### Features
+
+* add _attachments/ subfolder to Library for binary assets ([#25](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/25)) ([7501262](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/7501262f8224e6c7a8e246a6eacb6fa654f81a11))
+
 ## [0.12.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.11.2...v0.12.0) (2026-05-15)
 
 
