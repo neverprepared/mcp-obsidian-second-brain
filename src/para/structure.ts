@@ -12,6 +12,7 @@ export async function ensureVaultStructure(): Promise<void> {
     ...CONFIG.LIBRARY_SUBFOLDERS.map((s) =>
       path.join(vaultPath, CONFIG.LIBRARY_FOLDER, s),
     ),
+    path.join(vaultPath, CONFIG.LIBRARY_FOLDER, CONFIG.LIBRARY_ATTACHMENTS_FOLDER),
     path.join(vaultPath, CONFIG.DAILY_FOLDER),
     path.join(vaultPath, CONFIG.INDEX_FOLDER),
     path.join(vaultPath, CONFIG.TEMPLATE_FOLDER),
