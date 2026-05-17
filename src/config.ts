@@ -6,6 +6,7 @@ export const CONFIG = {
   PARA_FOLDERS: ['Projects', 'Areas', 'Resources', 'Archives'] as const,
   LIBRARY_FOLDER: 'Library',
   LIBRARY_SUBFOLDERS: ['HowTos', 'Runbooks', 'Articles', 'References', 'Scratch'] as const,
+  LIBRARY_ATTACHMENTS_FOLDER: '_attachments',
   DAILY_FOLDER: '_daily',
   INDEX_FOLDER: '_index',
   TEMPLATE_FOLDER: '_templates',
