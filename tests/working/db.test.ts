@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import {
   initWorkingDb,
   generateTaskId,
@@ -16,10 +19,24 @@ import {
   resolveQuestion,
   getPromotableFindings,
 } from '../../src/working/db.js';
+import { CONFIG } from '../../src/config.js';
 
-// Re-init a fresh DB before each test
-beforeEach(() => {
+let tmpDir: string;
+let originalVaultPath: string;
+
+beforeEach(async () => {
+  originalVaultPath = CONFIG.VAULT_PATH;
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'db-test-'));
+  // @ts-expect-error - mutating config for test
+  CONFIG.VAULT_PATH = tmpDir;
+  await fs.mkdir(path.join(tmpDir, CONFIG.INDEX_FOLDER), { recursive: true });
   initWorkingDb();
+});
+
+afterEach(async () => {
+  // @ts-expect-error - restoring config
+  CONFIG.VAULT_PATH = originalVaultPath;
+  await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
 describe('generateTaskId', () => {
