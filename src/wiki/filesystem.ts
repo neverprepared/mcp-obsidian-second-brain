@@ -176,17 +176,7 @@ async function upsertIndexRow(
     const newRow = buildIndexRow(relPath, kind, title, updated);
     const link = relPathToWikiLink(relPath);
 
-    let rows: string[];
-    let preamble: string;
-    let postamble: string;
-
-    if (existing.trim() === '') {
-      preamble = '';
-      rows = [];
-      postamble = '';
-    } else {
-      ({ preamble, rows, postamble } = parseIndexContent(existing));
-    }
+    const { rows } = existing.trim() === '' ? { rows: [] as string[] } : parseIndexContent(existing);
 
     // Remove any existing row for this file (match by [[link]])
     const filtered = rows.filter((r) => !r.includes(`[[${link}]]`));
@@ -194,12 +184,9 @@ async function upsertIndexRow(
     filtered.sort();
 
     const tableContent = buildIndexContent(indexTitle, filtered);
-    const finalContent = (preamble.trim() ? preamble.trimEnd() + '\n\n' : '') +
-      tableContent +
-      (postamble.trim() ? '\n' + postamble.trimStart() : '');
 
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
-    await writeAtomicFile(indexPath, finalContent);
+    await writeAtomicFile(indexPath, tableContent);
   });
 }
 
@@ -212,15 +199,10 @@ async function removeIndexRow(indexPath: string, indexTitle: string, relPath: st
     if (!existing.trim()) return;
 
     const link = relPathToWikiLink(relPath);
-    const { preamble, rows, postamble } = parseIndexContent(existing);
+    const { rows } = parseIndexContent(existing);
     const filtered = rows.filter((r) => !r.includes(`[[${link}]]`));
 
-    const tableContent = buildIndexContent(indexTitle, filtered);
-    const finalContent = (preamble.trim() ? preamble.trimEnd() + '\n\n' : '') +
-      tableContent +
-      (postamble.trim() ? '\n' + postamble.trimStart() : '');
-
-    await writeAtomicFile(indexPath, finalContent);
+    await writeAtomicFile(indexPath, buildIndexContent(indexTitle, filtered));
   });
 }
 
@@ -241,17 +223,7 @@ async function renameIndexRow(
     const oldLink = relPathToWikiLink(oldRelPath);
     const newRow = buildIndexRow(newRelPath, kind, title, updated);
 
-    let rows: string[];
-    let preamble: string;
-    let postamble: string;
-
-    if (!existing.trim()) {
-      preamble = '';
-      rows = [];
-      postamble = '';
-    } else {
-      ({ preamble, rows, postamble } = parseIndexContent(existing));
-    }
+    const { rows } = existing.trim() ? parseIndexContent(existing) : { rows: [] as string[] };
 
     const filtered = rows.filter((r) => !r.includes(`[[${oldLink}]]`));
     const newLink = relPathToWikiLink(newRelPath);
@@ -259,13 +231,8 @@ async function renameIndexRow(
     existingNew.push(newRow);
     existingNew.sort();
 
-    const tableContent = buildIndexContent(indexTitle, existingNew);
-    const finalContent = (preamble.trim() ? preamble.trimEnd() + '\n\n' : '') +
-      tableContent +
-      (postamble.trim() ? '\n' + postamble.trimStart() : '');
-
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
-    await writeAtomicFile(indexPath, finalContent);
+    await writeAtomicFile(indexPath, buildIndexContent(indexTitle, existingNew));
   });
 }
 

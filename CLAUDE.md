@@ -22,7 +22,7 @@ npx vitest run tests/vault/naming.test.ts
 
 Copy `.env.example` and set:
 - `OBSIDIAN_VAULT_PATH` — path to the Obsidian vault directory (default: `~/workspaces/profiles/personal/obsidian/vaults/memory`)
-- `LOG_LEVEL` — `debug | info | warn | error` (default: `info`). All logs go to **stderr** so they don't interfere with MCP stdio transport.
+- `MCP_SB_LOG_LEVEL` — `debug | info | warn | error` (default: `info`). All logs go to **stderr** so they don't interfere with MCP stdio transport. `LOG_LEVEL` is accepted as a fallback for backwards compatibility.
 
 ## Architecture
 

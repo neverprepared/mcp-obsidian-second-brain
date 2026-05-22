@@ -68,6 +68,7 @@ export const searchToolDefinition = {
 
 export async function handleSearch(args: unknown): Promise<CallToolResult> {
   try {
+    const t0 = performance.now();
     const input = SearchInputSchema.parse(args);
 
     // Exclude archived by default unless explicitly requested or filtering by archived status
@@ -132,6 +133,13 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
         line += `\n   > ${r.snippet}`;
       }
       return line;
+    });
+
+    logger.info('memory_search completed', {
+      query: input.query,
+      results: filtered.length,
+      mode: input.search_mode ?? 'auto',
+      ms: Math.round(performance.now() - t0),
     });
 
     return {

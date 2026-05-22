@@ -52,6 +52,7 @@ export const updateToolDefinition = {
 
 export async function handleUpdate(args: unknown): Promise<CallToolResult> {
   try {
+    const t0 = performance.now();
     const input = UpdateInputSchema.parse(args);
 
     const entry = findById(input.id);
@@ -124,7 +125,7 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       await deleteRenameJournal();
     }
 
-    logger.info('Updated memory', { id: fm.id, slug: newSlug });
+    logger.info('Updated memory', { id: fm.id, slug: newSlug, ms: Math.round(performance.now() - t0) });
 
     return {
       content: [
