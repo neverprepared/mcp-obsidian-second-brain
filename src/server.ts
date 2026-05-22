@@ -5,12 +5,16 @@ import {
   CallToolRequestSchema,
   type CallToolRequest,
 } from '@modelcontextprotocol/sdk/types.js';
+import { createRequire } from 'node:module';
 import { initialize, shutdown, logger, CONFIG } from './core/index.js';
 import { getToolDefinitions, handleToolCall } from './tools/index.js';
 
+const _require = createRequire(import.meta.url);
+const { version: pkgVersion } = _require('../package.json') as { version: string };
+
 const SERVER_INFO = {
   name: 'mcp-obsidian-second-brain',
-  version: '0.1.0',
+  version: pkgVersion,
 };
 
 export async function startServer(): Promise<void> {
