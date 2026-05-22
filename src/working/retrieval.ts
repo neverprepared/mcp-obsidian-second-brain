@@ -73,6 +73,7 @@ export async function seedTaskFromVault(
     for (const kw of keywords) {
       const hits = await searchMemories({ query: kw, limit: 5, freshness: 'fresh' });
       for (const hit of hits) {
+        if (hit.resultKind !== 'atom' || !hit.entry) continue;
         if (!seen.has(hit.entry.frontmatter.id)) {
           seen.add(hit.entry.frontmatter.id);
           results.push(hit);
@@ -83,6 +84,7 @@ export async function seedTaskFromVault(
     const top = results.slice(0, 5);
 
     for (const result of top) {
+      if (!result.entry) continue;
       const fm = result.entry.frontmatter;
       const snippet = result.snippet
         ? `\n\n> ${result.snippet}`

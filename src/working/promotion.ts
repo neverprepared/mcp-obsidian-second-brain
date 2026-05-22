@@ -95,6 +95,8 @@ async function findMatchingNote(title: string, tags: string[], content: string):
     const results = await searchMemories({ query: titleQuery, limit: 5 });
 
     for (const result of results) {
+      if (result.resultKind !== 'atom' || !result.entry) continue;
+
       // Strong title match
       if (result.score >= 10) {
         return result.entry.frontmatter.id;

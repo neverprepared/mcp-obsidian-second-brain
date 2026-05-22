@@ -4,6 +4,7 @@ import matter from 'gray-matter';
 import { CONFIG } from '../config.js';
 import { VaultError, ValidationError } from '../shared/errors.js';
 import { writeAtomicFile, withFileLock, appendToLog } from '../vault/filesystem.js';
+import { indexWikiEntry, removeWikiFromIndex } from '../vault/search.js';
 import { nowISO } from '../shared/utils.js';
 import type { WikiEntry } from './types.js';
 
@@ -489,6 +490,9 @@ export async function writeWikiFile(params: WriteWikiParams): Promise<void> {
   await fs.mkdir(path.dirname(absPath), { recursive: true });
   await writeAtomicFile(absPath, fileContent);
 
+  // Keep search index in sync
+  indexWikiEntry(relPath, title, kind, tags, content, now, created);
+
   const subfolder = extractSubfolder(relPath);
 
   // Update subfolder _index.md
@@ -526,6 +530,8 @@ export async function deleteWikiFile(relPath: string): Promise<void> {
   } catch (err) {
     throw new VaultError(`Failed to delete wiki file: ${relPath}`, { relPath, error: String(err) });
   }
+
+  removeWikiFromIndex(relPath);
 
   const subfolder = extractSubfolder(relPath);
 
@@ -568,6 +574,11 @@ export async function moveWikiFile(fromRelPath: string, toRelPath: string): Prom
 
   await fs.mkdir(path.dirname(toAbs), { recursive: true });
   await fs.rename(fromAbs, toAbs);
+
+  // Update search index: remove old path, add new
+  removeWikiFromIndex(fromRelPath);
+  const { content: movedContent } = matter(raw);
+  indexWikiEntry(toRelPath, title, kind, Array.isArray(data['tags']) ? (data['tags'] as string[]) : [], movedContent.trim(), updated, typeof data['created'] === 'string' ? data['created'] : updated);
 
   const fromSubfolder = extractSubfolder(fromRelPath);
   const toSubfolder = extractSubfolder(toRelPath);

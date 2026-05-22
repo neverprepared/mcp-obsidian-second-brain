@@ -112,6 +112,40 @@ export async function listAllMemoryFiles(): Promise<MemoryFileEntry[]> {
   return entries;
 }
 
+export interface WikiFileEntry {
+  filePath: string;
+  relPath: string; // relative to Wiki/, e.g. "HowTos/oauth-setup.md"
+}
+
+/**
+ * List all wiki page files in Wiki/ subfolders. Excludes _index.md,
+ * CLAUDE.md, and non-.md files. Never walks _attachments/.
+ */
+export async function listAllWikiFiles(): Promise<WikiFileEntry[]> {
+  const entries: WikiFileEntry[] = [];
+  const root = path.join(CONFIG.VAULT_PATH, CONFIG.WIKI_FOLDER);
+
+  try {
+    const dirs = await fs.readdir(root, { withFileTypes: true });
+    for (const dir of dirs) {
+      if (!dir.isDirectory() || dir.name.startsWith('_')) continue;
+      const subDir = path.join(root, dir.name);
+      try {
+        const files = await fs.readdir(subDir);
+        for (const file of files) {
+          if (!file.endsWith('.md') || file === CONFIG.INDEX_FILE) continue;
+          entries.push({
+            filePath: path.join(subDir, file),
+            relPath: `${dir.name}/${file}`,
+          });
+        }
+      } catch { /* skip unreadable subdir */ }
+    }
+  } catch { /* Wiki/ may not exist yet */ }
+
+  return entries;
+}
+
 // ---------------------------------------------------------------------------
 // Daily note append (atom creation log — unchanged)
 // ---------------------------------------------------------------------------
