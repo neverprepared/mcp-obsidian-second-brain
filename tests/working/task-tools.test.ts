@@ -12,8 +12,6 @@ let tmpDir: string;
 let originalVaultPath: string;
 
 beforeEach(async () => {
-  initWorkingDb();
-
   originalVaultPath = CONFIG.VAULT_PATH;
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-tools-test-'));
   // @ts-expect-error - mutating config for test
@@ -22,6 +20,8 @@ beforeEach(async () => {
   await fs.mkdir(path.join(tmpDir, CONFIG.MEMORY_FOLDER), { recursive: true });
   await fs.mkdir(path.join(tmpDir, CONFIG.DAILY_FOLDER), { recursive: true });
   await fs.mkdir(path.join(tmpDir, CONFIG.INDEX_FOLDER), { recursive: true });
+
+  initWorkingDb();
   await buildIndex();
 });
 
