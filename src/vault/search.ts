@@ -1,5 +1,8 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import matter from 'gray-matter';
 import type { Frontmatter, LifecycleStatus, Status } from '../schemas/frontmatter.js';
-import { listAllMemoryFiles, readMemoryFile, writeMemoryFile } from './filesystem.js';
+import { listAllMemoryFiles, listAllWikiFiles, readMemoryFile, writeMemoryFile } from './filesystem.js';
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { nowISO, isStale } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
@@ -13,14 +16,26 @@ export interface IndexEntry {
   slug: string;
 }
 
+export interface WikiIndexEntry {
+  relPath: string;   // e.g. "HowTos/oauth-setup.md"
+  title: string;
+  kind: string;
+  tags: string[];
+  created: string;
+  updated: string;
+  body: string;      // kept for snippet generation in fallback search
+}
+
 let memoryIndex: Map<string, IndexEntry> = new Map();
 let slugIndex: Map<string, string> = new Map(); // slug -> id
 let titleIndex: Map<string, string> = new Map(); // lowercase title -> id
+let wikiIndex: Map<string, WikiIndexEntry> = new Map(); // key: "wiki:<relPath>"
 
 export async function buildIndex(): Promise<void> {
   const newIndex = new Map<string, IndexEntry>();
   const newSlugIndex = new Map<string, string>();
   const newTitleIndex = new Map<string, string>();
+  const newWikiIndex = new Map<string, WikiIndexEntry>();
   const files = await listAllMemoryFiles();
 
   // Collect bodies transiently during the walk to feed FTS, then drop.
@@ -52,19 +67,63 @@ export async function buildIndex(): Promise<void> {
     }
   }
 
+  // Index wiki files into shared FTS + vector store
+  const wikiFiles = await listAllWikiFiles();
+  for (const { filePath, relPath } of wikiFiles) {
+    try {
+      const raw = await fs.readFile(filePath, 'utf-8');
+      const { data, content } = matter(raw);
+      const wEntry: WikiIndexEntry = {
+        relPath,
+        title: typeof data['title'] === 'string' ? data['title'] : path.basename(relPath, '.md'),
+        kind: typeof data['kind'] === 'string' ? data['kind'] : 'reference',
+        tags: Array.isArray(data['tags']) ? (data['tags'] as string[]) : [],
+        created: typeof data['created'] === 'string' ? data['created'] : '',
+        updated: typeof data['updated'] === 'string' ? data['updated'] : '',
+        body: content.trim(),
+      };
+      const id = `wiki:${relPath}`;
+      newWikiIndex.set(id, wEntry);
+      ftsEntries.push({ id, title: wEntry.title, tags: wEntry.tags, body: wEntry.body });
+    } catch (err) {
+      logger.warn('Failed to index wiki file', { relPath, error: String(err) });
+    }
+  }
+
   memoryIndex = newIndex;
   slugIndex = newSlugIndex;
   titleIndex = newTitleIndex;
+  wikiIndex = newWikiIndex;
 
   if (isFtsReady()) {
     rebuildFts(ftsEntries);
   }
 
-  logger.info('Memory index built', { count: newIndex.size });
+  logger.info('Memory index built', { count: newIndex.size, wiki: newWikiIndex.size });
 }
 
 export function getIndex(): Map<string, IndexEntry> {
   return memoryIndex;
+}
+
+export function getWikiIndex(): Map<string, WikiIndexEntry> {
+  return wikiIndex;
+}
+
+export function indexWikiEntry(relPath: string, title: string, kind: string, tags: string[], body: string, updated: string, created: string): void {
+  const id = `wiki:${relPath}`;
+  wikiIndex.set(id, { relPath, title, kind, tags, created, updated, body });
+  upsertFts(id, title, tags, body);
+  void embedText(buildEmbedText(title, tags, body)).then((embedding) => {
+    if (embedding) upsertVector(id, embedding);
+  });
+}
+
+export function removeWikiFromIndex(relPath: string): void {
+  const id = `wiki:${relPath}`;
+  wikiIndex.delete(id);
+  deleteFts(id);
+  deleteVector(id);
 }
 
 export function indexEntry(id: string, entry: IndexEntry, body: string): void {
@@ -144,11 +203,44 @@ export interface SearchOptions extends DateFilters {
   search_mode?: 'auto' | 'keyword' | 'vector';
 }
 
+export type SearchResultKind = 'atom' | 'wiki';
+
 export interface SearchResult {
-  entry: IndexEntry;
+  resultKind: SearchResultKind;
+  entry?: IndexEntry;          // populated for atoms
+  wikiEntry?: WikiIndexEntry;  // populated for wiki hits
   score: number;
   snippet?: string;
   stale: boolean;
+}
+
+function passesWikiFilters(wEntry: WikiIndexEntry, options: Omit<SearchOptions, 'query' | 'limit'>): boolean {
+  // Wiki pages are never stale — exclude them from stale-only queries
+  if (options.freshness === 'stale') return false;
+  // Atom-only filters — wiki pages have no lifecycle_status or status
+  if (options.lifecycle_status) return false;
+  if (options.status) return false;
+
+  if (options.tags && options.tags.length > 0) {
+    const mode = options.tag_mode ?? 'and';
+    const entryTagsLower = wEntry.tags.map((t) => t.toLowerCase());
+    const filterTagsLower = options.tags.map((t) => t.toLowerCase());
+    if (mode === 'and' && !filterTagsLower.every((t) => entryTagsLower.includes(t))) return false;
+    if (mode === 'or' && !filterTagsLower.some((t) => entryTagsLower.includes(t))) return false;
+  }
+
+  if (options.exclude_tags && options.exclude_tags.length > 0) {
+    const entryTagsLower = wEntry.tags.map((t) => t.toLowerCase());
+    const excludeLower = options.exclude_tags.map((t) => t.toLowerCase());
+    if (excludeLower.some((t) => entryTagsLower.includes(t))) return false;
+  }
+
+  if (options.created_after && wEntry.created < options.created_after) return false;
+  if (options.created_before && wEntry.created > options.created_before) return false;
+  if (options.updated_after && wEntry.updated < options.updated_after) return false;
+  if (options.updated_before && wEntry.updated > options.updated_before) return false;
+
+  return true;
 }
 
 /** Returns false if the entry is excluded by filters, true if it passes. */
@@ -212,10 +304,12 @@ function applySortBy(results: SearchResult[], sortBy: string | undefined): void 
     // Already sorted by score descending, then updated descending
     return;
   }
+  const getField = (r: SearchResult, field: 'created' | 'updated' | 'title'): string =>
+    r.resultKind === 'atom' ? (r.entry!.frontmatter[field] ?? '') : (r.wikiEntry![field] ?? '');
   const sortFns: Record<string, (a: SearchResult, b: SearchResult) => number> = {
-    created: (a, b) => b.entry.frontmatter.created.localeCompare(a.entry.frontmatter.created),
-    updated: (a, b) => b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated),
-    title: (a, b) => a.entry.frontmatter.title.localeCompare(b.entry.frontmatter.title),
+    created: (a, b) => getField(b, 'created').localeCompare(getField(a, 'created')),
+    updated: (a, b) => getField(b, 'updated').localeCompare(getField(a, 'updated')),
+    title: (a, b) => getField(a, 'title').localeCompare(getField(b, 'title')),
   };
   const fn = sortFns[sortBy];
   if (fn) results.sort(fn);
@@ -263,25 +357,34 @@ async function hybridSearch(options: SearchOptions, query: string): Promise<Sear
   const candidates: SearchResult[] = [];
 
   for (const id of candidateIds) {
-    const entry = memoryIndex.get(id);
-    if (!entry) continue;
-    if (!passesFilters(entry, options)) continue;
-
     const vr = vectorRank.get(id);
     const fr = ftsRank.get(id);
-
     let rrf = 0;
     if (vr) rrf += 1 / (RRF_K + vr);
     if (fr) rrf += 1 / (RRF_K + fr);
-
+    const score = Math.round(rrf * 10000) / 10000;
     const snippet = ftsSnippet.get(id) || undefined;
-    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
-    candidates.push({ entry, score: Math.round(rrf * 10000) / 10000, snippet, stale });
+
+    const entry = memoryIndex.get(id);
+    if (entry) {
+      if (!passesFilters(entry, options)) continue;
+      const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
+      candidates.push({ resultKind: 'atom', entry, score, snippet, stale });
+      continue;
+    }
+
+    const wEntry = wikiIndex.get(id);
+    if (wEntry) {
+      if (!passesWikiFilters(wEntry, options)) continue;
+      candidates.push({ resultKind: 'wiki', wikiEntry: wEntry, score, snippet, stale: false });
+    }
   }
 
   candidates.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    return b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated);
+    const aUpdated = a.resultKind === 'atom' ? a.entry!.frontmatter.updated : a.wikiEntry!.updated;
+    const bUpdated = b.resultKind === 'atom' ? b.entry!.frontmatter.updated : b.wikiEntry!.updated;
+    return bUpdated.localeCompare(aUpdated);
   });
 
   return candidates.slice(0, options.limit);
@@ -312,12 +415,34 @@ function keywordSearch(options: SearchOptions): SearchResult[] {
       score = 1;
     }
 
-    results.push({ entry, score, snippet, stale: entryStale });
+    results.push({ resultKind: 'atom', entry, score, snippet, stale: entryStale });
+  }
+
+  // Wiki fallback scan
+  if (options.query) {
+    const queryLower = options.query.toLowerCase();
+    for (const wEntry of wikiIndex.values()) {
+      if (!passesWikiFilters(wEntry, options)) continue;
+      let score = 0;
+      if (wEntry.title.toLowerCase().includes(queryLower)) score += 10;
+      if (wEntry.tags.some((t) => t.toLowerCase().includes(queryLower))) score += 5;
+      if (wEntry.body.toLowerCase().includes(queryLower)) score += 1;
+      if (score === 0) continue;
+      results.push({ resultKind: 'wiki', wikiEntry: wEntry, score, stale: false });
+    }
+  } else if (!options.lifecycle_status && !options.status && options.freshness !== 'stale') {
+    // No query, no atom-only filters — include wiki pages in listing
+    for (const wEntry of wikiIndex.values()) {
+      if (!passesWikiFilters(wEntry, options)) continue;
+      results.push({ resultKind: 'wiki', wikiEntry: wEntry, score: 1, stale: false });
+    }
   }
 
   results.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    return b.entry.frontmatter.updated.localeCompare(a.entry.frontmatter.updated);
+    const aUpdated = a.resultKind === 'atom' ? a.entry!.frontmatter.updated : a.wikiEntry!.updated;
+    const bUpdated = b.resultKind === 'atom' ? b.entry!.frontmatter.updated : b.wikiEntry!.updated;
+    return bUpdated.localeCompare(aUpdated);
   });
 
   return results.slice(0, options.limit);
@@ -334,18 +459,20 @@ function ftsKeywordSearch(options: SearchOptions, query: string): SearchResult[]
 
   for (const hit of ftsHits) {
     const entry = memoryIndex.get(hit.id);
-    if (!entry) continue;
-    if (!passesFilters(entry, options)) continue;
+    if (entry) {
+      if (!passesFilters(entry, options)) continue;
+      const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
+      results.push({ resultKind: 'atom', entry, score: hit.rank, snippet: hit.snippet || undefined, stale });
+      if (results.length >= options.limit) break;
+      continue;
+    }
 
-    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
-    results.push({
-      entry,
-      score: hit.rank,
-      snippet: hit.snippet || undefined,
-      stale,
-    });
-
-    if (results.length >= options.limit) break;
+    const wEntry = wikiIndex.get(hit.id);
+    if (wEntry) {
+      if (!passesWikiFilters(wEntry, options)) continue;
+      results.push({ resultKind: 'wiki', wikiEntry: wEntry, score: hit.rank, snippet: hit.snippet || undefined, stale: false });
+      if (results.length >= options.limit) break;
+    }
   }
 
   return results;

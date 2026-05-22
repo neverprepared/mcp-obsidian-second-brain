@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { SearchInputSchema } from '../schemas/tools.js';
 import { searchMemories, updateLastAccessed } from '../vault/search.js';
 import { logger } from '../shared/logger.js';
+import { CONFIG } from '../config.js';
 
 export const searchToolDefinition = {
   name: 'memory_search',
@@ -91,9 +92,9 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       updated_before: input.updated_before,
     });
 
-    // Post-filter archived if needed
+    // Post-filter archived if needed (wiki pages have no status — always include)
     let filtered = excludeArchived
-      ? results.filter((r) => r.entry.frontmatter.status !== 'archived')
+      ? results.filter((r) => r.resultKind === 'wiki' || r.entry!.frontmatter.status !== 'archived')
       : results;
     filtered = filtered.slice(0, input.limit);
 
@@ -103,15 +104,25 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       };
     }
 
-    // Update last_accessed for top results (fire-and-forget)
+    // Update last_accessed for top atom results (fire-and-forget)
     if (input.query) {
       for (const r of filtered.slice(0, 5)) {
-        void updateLastAccessed(r.entry.frontmatter.id);
+        if (r.resultKind === 'atom' && r.entry) {
+          void updateLastAccessed(r.entry.frontmatter.id);
+        }
       }
     }
 
     const lines = filtered.map((r, i) => {
-      const fm = r.entry.frontmatter;
+      if (r.resultKind === 'wiki') {
+        const w = r.wikiEntry!;
+        let line = `${i + 1}. [Wiki] **${w.title}** (${w.kind})`;
+        line += `\n   Path: ${CONFIG.WIKI_FOLDER}/${w.relPath}`;
+        line += `\n   Tags: ${w.tags.join(', ') || 'none'} | Score: ${r.score}`;
+        if (r.snippet) line += `\n   > ${r.snippet}`;
+        return line;
+      }
+      const fm = r.entry!.frontmatter;
       const freshness = r.stale ? 'STALE' : 'Fresh';
       const lifecycle = fm.lifecycle_status ?? fm.para ?? 'unknown';
       let line = `${i + 1}. **${fm.title}** (${lifecycle}) [${freshness}]`;
