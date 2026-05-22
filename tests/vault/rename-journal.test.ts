@@ -75,7 +75,7 @@ describe('rename journal', () => {
 
   describe('end-to-end with update tool', () => {
     async function storeAndGetId(title: string): Promise<string> {
-      await handleStore({ title, content: 'Body', para: 'resources', tags: [] });
+      await handleStore({ title, content: 'Body', lifecycle_status: 'reference', tags: [] });
       return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
     }
 

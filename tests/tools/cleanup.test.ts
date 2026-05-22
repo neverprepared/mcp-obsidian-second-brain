@@ -17,7 +17,7 @@ describe('memory_cleanup tool', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    return handleStore({ title, content: 'Content.', para: 'resources', tags: [], ...overrides });
+    return handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [], ...overrides });
   }
 
   it('dry_run: true lists candidates without acting (default)', async () => {

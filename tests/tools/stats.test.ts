@@ -18,7 +18,7 @@ describe('memory_stats tool', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    return handleStore({ title, content: 'Content.', para: 'resources', tags: [], ...overrides });
+    return handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [], ...overrides });
   }
 
   function getId(title: string) {
@@ -27,24 +27,24 @@ describe('memory_stats tool', () => {
 
   it('returns correct total count', async () => {
     await store('One');
-    await store('Two', { para: 'areas' });
-    await store('Three', { para: 'projects' });
+    await store('Two', { lifecycle_status: 'active' });
+    await store('Three', { lifecycle_status: 'archive' });
 
     const result = await handleStats({});
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('Total memories:** 3');
   });
 
-  it('counts by PARA category', async () => {
-    await store('R1', { para: 'resources' });
-    await store('A1', { para: 'areas' });
-    await store('P1', { para: 'projects' });
-    await store('P2', { para: 'projects' });
+  it('counts by lifecycle status', async () => {
+    await store('R1', { lifecycle_status: 'reference' });
+    await store('A1', { lifecycle_status: 'active' });
+    await store('P1', { lifecycle_status: 'active' });
+    await store('P2', { lifecycle_status: 'archive' });
 
     const text = (await handleStats({})).content[0]!.text;
-    expect(text).toContain('Projects: 2');
-    expect(text).toContain('Areas: 1');
-    expect(text).toContain('Resources: 1');
+    expect(text).toContain('Active: 2');
+    expect(text).toContain('Reference: 1');
+    expect(text).toContain('Archive: 1');
   });
 
   it('counts stale memories', async () => {

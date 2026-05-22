@@ -88,7 +88,20 @@ export async function embedBatch(texts: string[]): Promise<Array<number[] | null
  */
 export function buildEmbedText(title: string, tags: string[], body: string): string {
   const tagStr = tags.length > 0 ? `Tags: ${tags.join(', ')}` : '';
-  // Truncate body to avoid token limits — 2000 chars is plenty for nomic-embed-text
-  const bodyPreview = body.slice(0, 2000);
-  return [title, tagStr, bodyPreview].filter(Boolean).join('\n');
+
+  let bodyPart: string;
+  if (body.length <= 3000) {
+    bodyPart = body;
+  } else if (body.length <= 6000) {
+    bodyPart = body.slice(0, 4500);
+  } else {
+    const headings = (body.match(/^#{1,6}\s.+$/gm) ?? []).slice(0, 20).join('\n');
+    bodyPart = [
+      body.slice(0, 3000),
+      headings ? `Headings:\n${headings}` : '',
+      body.slice(-1500),
+    ].filter(Boolean).join('\n\n');
+  }
+
+  return [title, tagStr, bodyPart].filter(Boolean).join('\n\n');
 }

@@ -21,7 +21,7 @@ describe('memory_update tool', () => {
   });
 
   async function storeAndGetId(title = 'Update Test', overrides: Record<string, unknown> = {}) {
-    await handleStore({ title, content: 'Original content.', para: 'resources', tags: ['original'], ...overrides });
+    await handleStore({ title, content: 'Original content.', lifecycle_status: 'reference', tags: ['original'], ...overrides });
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 
@@ -35,14 +35,14 @@ describe('memory_update tool', () => {
     expect(fileContent).toContain('New content.');
   });
 
-  it('updates content (append mode)', async () => {
+  it('updates content (replace mode replaces existing content)', async () => {
     const id = await storeAndGetId();
-    await handleUpdate({ id, content: 'Appended.', append: true });
+    await handleUpdate({ id, content: 'Replaced content.' });
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.id === id)!;
     const fileContent = await fs.readFile(entry.filePath, 'utf-8');
-    expect(fileContent).toContain('Original content.');
-    expect(fileContent).toContain('Appended.');
+    expect(fileContent).toContain('Replaced content.');
+    expect(fileContent).not.toContain('Original content.');
   });
 
   it('replaces tags', async () => {
@@ -62,17 +62,14 @@ describe('memory_update tool', () => {
     expect(entry.frontmatter.tags).toContain('extra');
   });
 
-  it('moves file when para changes', async () => {
+  it('updates lifecycle_status', async () => {
     const id = await storeAndGetId();
-    await handleUpdate({ id, para: 'areas' });
+    await handleUpdate({ id, status: 'stale' });
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.id === id)!;
-    expect(entry.frontmatter.para).toBe('areas');
-    expect(entry.filePath).toContain('Areas');
-
-    // Old file should be gone
-    const resourcesFiles = await fs.readdir(path.join(tmpDir, 'Resources'));
-    expect(resourcesFiles.length).toBe(0);
+    expect(entry.frontmatter.status).toBe('stale');
+    // All memories still live in Memory/ folder
+    expect(entry.filePath).toContain('Memory');
   });
 
   it('renames file when title changes', async () => {

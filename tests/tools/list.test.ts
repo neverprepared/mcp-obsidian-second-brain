@@ -18,7 +18,7 @@ describe('memory_search listing mode (no query)', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    return handleStore({ title, content: 'Content.', para: 'resources', tags: ['tag-a'], ...overrides });
+    return handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: ['tag-a'], ...overrides });
   }
 
   it('lists all non-archived memories by default', async () => {
@@ -52,13 +52,13 @@ describe('memory_search listing mode (no query)', () => {
     expect(result.content[0]!.text).toContain('Archived One');
   });
 
-  it('filters by para', async () => {
-    await store('In Resources', { para: 'resources' });
-    await store('In Areas', { para: 'areas', tags: [] });
+  it('filters by lifecycle_status', async () => {
+    await store('In Reference', { lifecycle_status: 'reference' });
+    await store('In Active', { lifecycle_status: 'active', tags: [] });
 
-    const result = await handleSearch({ para: 'resources' });
-    expect(result.content[0]!.text).toContain('In Resources');
-    expect(result.content[0]!.text).not.toContain('In Areas');
+    const result = await handleSearch({ lifecycle_status: 'reference' });
+    expect(result.content[0]!.text).toContain('In Reference');
+    expect(result.content[0]!.text).not.toContain('In Active');
   });
 
   it('filters by status', async () => {
@@ -111,7 +111,7 @@ describe('memory_search listing mode (no query)', () => {
   });
 
   it('returns no-results message when empty', async () => {
-    const result = await handleSearch({ para: 'projects' });
+    const result = await handleSearch({ lifecycle_status: 'archive' });
     expect(result.content[0]!.text).toBe('No memories found matching your criteria.');
   });
 });

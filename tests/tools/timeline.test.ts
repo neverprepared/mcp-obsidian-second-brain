@@ -16,7 +16,7 @@ describe('memory_timeline tool', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    return handleStore({ title, content: 'Content.', para: 'resources', tags: [], ...overrides });
+    return handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [], ...overrides });
   }
 
   it('returns empty message when no memories exist', async () => {
@@ -37,14 +37,14 @@ describe('memory_timeline tool', () => {
     expect(text).toContain('3 of 3 entries');
   });
 
-  it('filters by PARA category', async () => {
-    await store('Resource item', { para: 'resources' });
-    await store('Project item', { para: 'projects' });
+  it('filters by lifecycle_status', async () => {
+    await store('Reference item', { lifecycle_status: 'reference' });
+    await store('Active item', { lifecycle_status: 'active' });
 
-    const result = await handleTimeline({ para: 'projects' });
+    const result = await handleTimeline({ lifecycle_status: 'active' });
     const text = result.content[0]!.text;
-    expect(text).toContain('Project item');
-    expect(text).not.toContain('Resource item');
+    expect(text).toContain('Active item');
+    expect(text).not.toContain('Reference item');
   });
 
   it('filters by tags', async () => {

@@ -18,7 +18,7 @@ describe('graph traversal (BFS)', () => {
   });
 
   async function store(title: string) {
-    return handleStore({ title, content: 'Content.', para: 'resources', tags: [] });
+    return handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [] });
   }
 
   function getId(title: string) {

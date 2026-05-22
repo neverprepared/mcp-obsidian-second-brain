@@ -46,11 +46,11 @@ export async function handleRecall(args: unknown): Promise<CallToolResult> {
     void updateLastAccessed(entry.frontmatter.id);
 
     const fm = parsed.frontmatter;
-    const freshness = isStale(fm.updated, fm.ttl_days, fm.para) ? 'STALE' : 'Fresh';
+    const freshness = isStale(fm.updated, fm.ttl_days, fm.lifecycle_status) ? 'STALE' : 'Fresh';
     const meta = [
       `**ID:** ${fm.id}`,
       `**Title:** ${fm.title}`,
-      `**PARA:** ${fm.para}`,
+      `**Lifecycle:** ${fm.lifecycle_status ?? fm.para ?? 'unknown'}`,
       `**Tags:** ${fm.tags.join(', ') || 'none'}`,
       `**Status:** ${fm.status}`,
       `**Confidence:** ${fm.confidence}`,

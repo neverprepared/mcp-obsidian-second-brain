@@ -16,7 +16,7 @@ describe('memory_search tool', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    return handleStore({ title, content: 'Generic content.', para: 'resources', tags: ['tag-a'], ...overrides });
+    return handleStore({ title, content: 'Generic content.', lifecycle_status: 'reference', tags: ['tag-a'], ...overrides });
   }
 
   it('finds memory by title query', async () => {

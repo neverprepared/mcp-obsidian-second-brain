@@ -16,7 +16,7 @@ describe('exclude_tags filter', () => {
   });
 
   async function store(title: string, tags: string[]) {
-    return handleStore({ title, content: `Content about ${title}`, para: 'resources', tags });
+    return handleStore({ title, content: `Content about ${title}`, lifecycle_status: 'reference', tags });
   }
 
   describe('memory_search with query', () => {

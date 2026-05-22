@@ -17,7 +17,7 @@ describe('memory_recall tool', () => {
   });
 
   async function storeAndGetId(title: string, content = 'Test content.') {
-    await handleStore({ title, content, para: 'resources', tags: ['test'] });
+    await handleStore({ title, content, lifecycle_status: 'reference', tags: ['test'] });
     const index = getIndex();
     return [...index.values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }

@@ -2,14 +2,24 @@ import { searchMemories, findByTitle } from '../vault/search.js';
 import { handleStore } from '../tools/store.js';
 import { handleUpdate } from '../tools/update.js';
 import { isFtsReady, searchFts } from '../vault/fts-index.js';
+import { appendToLog } from '../vault/filesystem.js';
+import { writeWikiFile } from '../wiki/filesystem.js';
+import { slugFromTitle } from '../vault/naming.js';
 import type { Finding, MemoryType, TaskState } from './db.js';
+import type { LifecycleStatus } from '../schemas/frontmatter.js';
 import { logger } from '../shared/logger.js';
 
-/** PARA category each memory_type promotes into */
-const PARA_FOR_TYPE: Record<MemoryType, 'resources' | 'areas'> = {
-  semantic: 'resources',
-  episodic: 'areas',
-  procedural: 'resources',
+/** Lifecycle routing per memory_type */
+const LIFECYCLE_FOR_TYPE: Record<MemoryType, LifecycleStatus> = {
+  semantic: 'reference',
+  episodic: 'active',
+  procedural: 'reference',
+};
+
+const TTL_FOR_TYPE: Record<MemoryType, number> = {
+  semantic: 180,
+  episodic: 90,
+  procedural: 180,
 };
 
 /** Tags appended per memory_type to aid future retrieval */
@@ -104,7 +114,20 @@ async function findMatchingNote(title: string, tags: string[], content: string):
   return undefined;
 }
 
-async function promoteFinding(finding: Finding, goalTags: string[]): Promise<'created' | 'appended' | 'skipped'> {
+/**
+ * Derive input_sources from artifact references that start with 'Input/'.
+ */
+function extractInputSources(artifacts: TaskState['artifacts']): string[] {
+  return artifacts
+    .map((a) => a.reference)
+    .filter((ref) => ref.startsWith('Input/'));
+}
+
+async function promoteFinding(
+  finding: Finding,
+  goalTags: string[],
+  inputSources: string[],
+): Promise<'created' | 'appended' | 'skipped'> {
   const memoryType = (finding.memory_type ?? 'episodic') as MemoryType;
 
   // Skip seeded long-term memory findings — they already live in the vault
@@ -113,11 +136,57 @@ async function promoteFinding(finding: Finding, goalTags: string[]): Promise<'cr
   }
 
   const title = titleFromContent(finding.content);
-  const para = PARA_FOR_TYPE[memoryType];
+  const lifecycleStatus = LIFECYCLE_FOR_TYPE[memoryType];
+  const ttlDays = TTL_FOR_TYPE[memoryType];
   const tags = [...goalTags, ...EXTRA_TAGS[memoryType]];
-  const content = memoryType === 'procedural'
-    ? `## Steps\n\n${finding.content}`
-    : finding.content;
+
+  // --- Procedural findings: write to Wiki/, create stub atom ---
+  if (memoryType === 'procedural') {
+    const wikiSlug = slugFromTitle(title);
+    const wikiRelPath = `Runbooks/${wikiSlug}.md`;
+    const wikiContent = `## Steps\n\n${finding.content}`;
+
+    try {
+      await writeWikiFile({
+        relPath: wikiRelPath,
+        mode: 'create',
+        content: wikiContent,
+        title,
+        kind: 'runbook',
+        tags,
+        sources: [],
+      });
+    } catch {
+      // May already exist — ignore creation errors, still create stub atom
+    }
+
+    // Create stub atom in Memory/ pointing to the wiki page
+    const stubContent = `Procedure captured as wiki runbook. See [[Wiki/${wikiRelPath.replace(/\.md$/, '')}]].`;
+    const result = await handleStore({
+      title,
+      content: stubContent,
+      lifecycle_status: lifecycleStatus,
+      tags,
+      source: 'conversation',
+      confidence: finding.importance === 'high' ? 'high' : 'medium',
+      related: [],
+      source_urls: [],
+      ttl_days: ttlDays,
+      ...(inputSources.length > 0 && { input_sources: inputSources }),
+    });
+
+    if (result.isError) {
+      logger.warn('Failed to create stub atom for procedural finding', { title });
+      return 'skipped';
+    }
+
+    await appendToLog(`promoted procedural: "${title}" → Wiki/${wikiRelPath}`);
+    logger.info('Promoted procedural finding to Wiki + stub atom', { title });
+    return 'created';
+  }
+
+  // --- Semantic / episodic findings ---
+  const content = finding.content;
 
   const existingId = await findMatchingNote(title, tags, content);
 
@@ -134,27 +203,36 @@ async function promoteFinding(finding: Finding, goalTags: string[]): Promise<'cr
       return 'skipped';
     }
 
+    await appendToLog(`promoted ${memoryType} (appended): "${title}" → id:${existingId}`);
     logger.info('Appended finding to existing note', { id: existingId, title });
     return 'appended';
   }
 
-  const result = await handleStore({
+  const storeArgs: Record<string, unknown> = {
     title,
     content,
-    para,
+    lifecycle_status: lifecycleStatus,
     tags,
     source: 'conversation',
     confidence: finding.importance === 'high' ? 'high' : 'medium',
     related: [],
     source_urls: [],
-  });
+    ttl_days: ttlDays,
+  };
+
+  if (inputSources.length > 0) {
+    storeArgs['input_sources'] = inputSources;
+  }
+
+  const result = await handleStore(storeArgs);
 
   if (result.isError) {
     logger.warn('Failed to create note for finding', { title });
     return 'skipped';
   }
 
-  logger.info('Created new note from finding', { title, para, memoryType });
+  await appendToLog(`promoted ${memoryType} (created): "${title}"`);
+  logger.info('Created new note from finding', { title, lifecycleStatus, memoryType });
   return 'created';
 }
 
@@ -165,11 +243,12 @@ async function promoteFinding(finding: Finding, goalTags: string[]): Promise<'cr
 export async function promoteTaskToVault(state: TaskState): Promise<{ created: number; appended: number; skipped: number }> {
   const counts = { created: 0, appended: 0, skipped: 0 };
   const goalTags = keywordsFromGoal(state.task.goal);
+  const inputSources = extractInputSources(state.artifacts);
 
   for (const finding of state.findings) {
     if (finding.importance === 'low') continue;
 
-    const outcome = await promoteFinding(finding, goalTags);
+    const outcome = await promoteFinding(finding, goalTags, inputSources);
     counts[outcome]++;
   }
 

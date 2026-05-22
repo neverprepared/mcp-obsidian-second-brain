@@ -26,7 +26,7 @@ describe('vault/search', () => {
     return handleStore({
       title: 'Test Memory',
       content: 'Some test content here.',
-      para: 'resources',
+      lifecycle_status: 'reference',
       tags: ['test', 'sample'],
       ...overrides,
     });
@@ -135,12 +135,12 @@ describe('vault/search', () => {
       expect(staleTitles).not.toContain('Fresh Memory');
     });
 
-    it('para filter restricts results', async () => {
-      await storeMemory({ title: 'In Resources', para: 'resources' });
-      await storeMemory({ title: 'In Areas', para: 'areas', tags: [] });
+    it('lifecycle_status filter restricts results', async () => {
+      await storeMemory({ title: 'In Reference', lifecycle_status: 'reference' });
+      await storeMemory({ title: 'In Active', lifecycle_status: 'active', tags: [] });
 
-      const results = await searchMemories({ para: 'resources', limit: 10 });
-      expect(results.every((r) => r.entry.frontmatter.para === 'resources')).toBe(true);
+      const results = await searchMemories({ lifecycle_status: 'reference', limit: 10 });
+      expect(results.every((r) => r.entry.frontmatter.lifecycle_status === 'reference')).toBe(true);
     });
 
     it('created_after filter', async () => {

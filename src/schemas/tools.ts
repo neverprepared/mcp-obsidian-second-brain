@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ParaCategorySchema, ConfidenceSchema, SourceSchema, StatusSchema } from './frontmatter.js';
+import { LifecycleStatusSchema, ConfidenceSchema, SourceSchema, StatusSchema } from './frontmatter.js';
 
 export const FreshnessFilterSchema = z.enum(['all', 'fresh', 'stale']);
 export type FreshnessFilter = z.infer<typeof FreshnessFilterSchema>;
@@ -10,7 +10,7 @@ export type TagMode = z.infer<typeof TagModeSchema>;
 export const StoreInputSchema = z.object({
   title: z.string().min(1).max(200),
   content: z.string().min(1),
-  para: ParaCategorySchema,
+  lifecycle_status: LifecycleStatusSchema,
   tags: z.array(z.string().max(50)).max(50).default([]),
   related: z.array(z.string().max(60)).max(50).default([]),
   confidence: ConfidenceSchema.default('medium'),
@@ -38,7 +38,7 @@ export const SearchInputSchema = z.object({
   tags: z.array(z.string()).optional(),
   tag_mode: TagModeSchema,
   exclude_tags: z.array(z.string()).optional(),
-  para: ParaCategorySchema.optional(),
+  lifecycle_status: LifecycleStatusSchema.optional(),
   status: StatusSchema.optional(),
   freshness: FreshnessFilterSchema.default('all'),
   sort_by: z.enum(['relevance', 'created', 'updated', 'title']).default('relevance'),
@@ -57,8 +57,6 @@ export const UpdateInputSchema = z.object({
   id: z.string(),
   title: z.string().min(1).max(200).optional(),
   content: z.string().optional(),
-  append: z.boolean().default(false),
-  para: ParaCategorySchema.optional(),
   tags: z.array(z.string().max(50)).max(50).optional(),
   add_tags: z.array(z.string().max(50)).max(50).optional(),
   related: z.array(z.string().max(60)).max(50).optional(),
@@ -135,7 +133,7 @@ export const TimelineInputSchema = z.object({
   after: z.string().optional().describe('ISO date — only show activity after this date'),
   before: z.string().optional().describe('ISO date — only show activity before this date'),
   activity: z.enum(['created', 'updated', 'accessed']).default('updated').describe('Which timestamp to use for ordering'),
-  para: ParaCategorySchema.optional(),
+  lifecycle_status: LifecycleStatusSchema.optional(),
   tags: z.array(z.string()).optional(),
   group_by: z.enum(['day', 'week', 'none']).default('day'),
   limit: z.number().min(1).max(100).default(30),

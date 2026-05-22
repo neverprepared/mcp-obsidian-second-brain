@@ -5,7 +5,7 @@ import { findById, indexEntry as updateIndex } from '../vault/search.js';
 import { readMemoryFile, writeMemoryFile, memoryFilePath } from '../vault/filesystem.js';
 import { parseMemoryFile, serializeMemory } from '../vault/frontmatter.js';
 import { slugFromTitle, deduplicateSlug } from '../vault/naming.js';
-import { paraFolderFromCategory, CONFIG } from '../config.js';
+import { CONFIG } from '../config.js';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 import { renameSlugReferences } from '../vault/links.js';
@@ -15,19 +15,13 @@ import path from 'node:path';
 export const updateToolDefinition = {
   name: 'memory_update',
   description:
-    'Update an existing memory. Can modify content, tags, PARA category, status, or metadata. Setting status to "archived" archives in place (preserves links). Setting para to "archives" physically moves the file. Renaming a title updates all cross-references.',
+    'Update an existing memory. Can modify content (replace), tags, lifecycle_status, status, or metadata. Renaming a title updates all cross-references. To append content without replacing, use memory_append instead.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       id: { type: 'string', description: 'Memory ID to update' },
       title: { type: 'string', description: 'New title (also renames file)' },
-      content: { type: 'string', description: 'New or appended content' },
-      append: { type: 'boolean', description: 'If true, append content instead of replacing (default: false)' },
-      para: {
-        type: 'string',
-        enum: ['projects', 'areas', 'resources', 'archives'],
-        description: 'New PARA category (moves the file)',
-      },
+      content: { type: 'string', description: 'New content (replaces existing)' },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -75,7 +69,6 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
 
     // Apply updates
     if (input.title !== undefined) fm.title = input.title;
-    if (input.para !== undefined) fm.para = input.para;
     if (input.tags !== undefined) fm.tags = input.tags;
     if (input.add_tags !== undefined) {
       const existing = new Set(fm.tags);
@@ -89,30 +82,24 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
     if (input.ttl_days !== undefined) fm.ttl_days = input.ttl_days;
 
     if (input.content !== undefined) {
-      content = input.append ? `${content}\n\n${input.content}` : input.content;
+      content = input.content;
     }
 
     fm.updated = nowISO();
 
     const fileContent = serializeMemory(fm, content);
 
-    // Determine if file needs to move
+    // Determine if file needs to move (title rename only)
     let newSlug = entry.slug;
     let newFilePath = entry.filePath;
 
     if (input.title !== undefined) {
       const baseSlug = slugFromTitle(input.title);
       if (baseSlug !== entry.slug) {
-        const folder = paraFolderFromCategory(fm.para);
-        const dir = path.join(CONFIG.VAULT_PATH, folder);
+        const dir = path.join(CONFIG.VAULT_PATH, CONFIG.MEMORY_FOLDER);
         newSlug = await deduplicateSlug(dir, baseSlug);
-        newFilePath = memoryFilePath(fm.para, newSlug);
+        newFilePath = memoryFilePath(newSlug);
       }
-    }
-
-    if (input.para !== undefined && input.para !== parsed.frontmatter.para) {
-      // PARA category changed, move file
-      newFilePath = memoryFilePath(fm.para, newSlug);
     }
 
     // Journal the rename intent BEFORE any disk changes so a crash anywhere
@@ -143,7 +130,7 @@ export async function handleUpdate(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Updated memory: "${fm.title}"\nID: ${fm.id}\nPath: ${paraFolderFromCategory(fm.para)}/${newSlug}.md`,
+          text: `Updated memory: "${fm.title}"\nID: ${fm.id}\nPath: ${CONFIG.MEMORY_FOLDER}/${newSlug}.md`,
         },
       ],
     };

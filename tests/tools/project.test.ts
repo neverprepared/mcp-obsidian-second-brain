@@ -19,7 +19,7 @@ describe('memory_project tool', () => {
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 
-  it('creates a project in the projects PARA', async () => {
+  it('creates a project with lifecycle_status active and project tag', async () => {
     const result = await handleProject({
       action: 'create',
       title: 'My Project',
@@ -30,7 +30,7 @@ describe('memory_project tool', () => {
 
     const entry = [...getIndex().values()].find((e) => e.frontmatter.title === 'My Project');
     expect(entry).toBeDefined();
-    expect(entry!.frontmatter.para).toBe('projects');
+    expect(entry!.frontmatter.lifecycle_status).toBe('active');
     expect(entry!.frontmatter.tags).toContain('project');
   });
 

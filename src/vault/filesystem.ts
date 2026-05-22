@@ -1,19 +1,52 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { CONFIG } from '../config.js';
-import { paraFolderFromCategory } from '../config.js';
-import type { ParaCategory } from '../schemas/frontmatter.js';
 import { VaultError } from '../shared/errors.js';
 import { logger } from '../shared/logger.js';
+import { todayDateString } from '../shared/utils.js';
 
-export function memoryFilePath(para: ParaCategory, slug: string): string {
-  return path.join(CONFIG.VAULT_PATH, paraFolderFromCategory(para), `${slug}.md`);
+// ---------------------------------------------------------------------------
+// Per-file mutex — prevents read-modify-write races on concurrent tool calls
+// ---------------------------------------------------------------------------
+
+const fileLocks = new Map<string, Promise<void>>();
+
+export async function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const prev = fileLocks.get(filePath) ?? Promise.resolve();
+  let resolve!: () => void;
+  const next = new Promise<void>((r) => { resolve = r; });
+  fileLocks.set(filePath, next);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolve();
+    if (fileLocks.get(filePath) === next) fileLocks.delete(filePath);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Atomic file write — write to .tmp then rename (crash-safe)
+// ---------------------------------------------------------------------------
+
+export async function writeAtomicFile(filePath: string, content: string): Promise<void> {
+  const dir = path.dirname(filePath);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = `${filePath}.tmp`;
+  await fs.writeFile(tmp, content, 'utf-8');
+  await fs.rename(tmp, filePath);
+}
+
+// ---------------------------------------------------------------------------
+// Memory file helpers
+// ---------------------------------------------------------------------------
+
+export function memoryFilePath(slug: string): string {
+  return path.join(CONFIG.VAULT_PATH, CONFIG.MEMORY_FOLDER, `${slug}.md`);
 }
 
 export async function writeMemoryFile(filePath: string, content: string): Promise<void> {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(filePath, content, 'utf-8');
+  await writeAtomicFile(filePath, content);
   logger.debug('Wrote memory file', { path: filePath });
 }
 
@@ -50,45 +83,88 @@ export async function moveMemoryFile(oldPath: string, newPath: string): Promise<
 export interface MemoryFileEntry {
   filePath: string;
   slug: string;
-  paraFolder: string;
+  paraFolder: string; // kept for backward compat; always 'Memory' now
 }
 
+/**
+ * List all atom files in Memory/. Excludes _index.md and any non-.md files.
+ * Never walks Input/, Wiki/, Output/, _log/, or _index/.
+ */
 export async function listAllMemoryFiles(): Promise<MemoryFileEntry[]> {
   const entries: MemoryFileEntry[] = [];
+  const dirPath = path.join(CONFIG.VAULT_PATH, CONFIG.MEMORY_FOLDER);
 
-  for (const folder of CONFIG.PARA_FOLDERS) {
-    const dirPath = path.join(CONFIG.VAULT_PATH, folder);
-    try {
-      const files = await fs.readdir(dirPath);
-      for (const file of files) {
-        if (file.endsWith('.md')) {
-          entries.push({
-            filePath: path.join(dirPath, file),
-            slug: file.replace(/\.md$/, ''),
-            paraFolder: folder,
-          });
-        }
-      }
-    } catch {
-      // Directory may not exist yet
+  try {
+    const files = await fs.readdir(dirPath);
+    for (const file of files) {
+      if (!file.endsWith('.md')) continue;
+      if (file === CONFIG.INDEX_FILE) continue;
+      entries.push({
+        filePath: path.join(dirPath, file),
+        slug: file.replace(/\.md$/, ''),
+        paraFolder: CONFIG.MEMORY_FOLDER,
+      });
     }
+  } catch {
+    // Memory/ may not exist yet on first run
   }
 
   return entries;
 }
 
+// ---------------------------------------------------------------------------
+// Daily note append (atom creation log — unchanged)
+// ---------------------------------------------------------------------------
+
 export async function appendToDaily(line: string): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]!;
+  const today = todayDateString();
   const dailyPath = path.join(CONFIG.VAULT_PATH, CONFIG.DAILY_FOLDER, `${today}.md`);
 
-  let existing = '';
-  try {
-    existing = await fs.readFile(dailyPath, 'utf-8');
-  } catch {
-    existing = `# ${today}\n\n`;
-  }
+  await withFileLock(dailyPath, async () => {
+    let existing = '';
+    try {
+      existing = await fs.readFile(dailyPath, 'utf-8');
+    } catch {
+      existing = `# ${today}\n\n`;
+    }
+    const updated = existing.trimEnd() + '\n' + line + '\n';
+    await fs.mkdir(path.dirname(dailyPath), { recursive: true });
+    await writeAtomicFile(dailyPath, updated);
+  });
+}
 
-  const updated = existing.trimEnd() + '\n' + line + '\n';
-  await fs.mkdir(path.dirname(dailyPath), { recursive: true });
-  await fs.writeFile(dailyPath, updated, 'utf-8');
+// ---------------------------------------------------------------------------
+// Provenance log — daily-rotated, append-only, server-internal
+// ---------------------------------------------------------------------------
+
+/**
+ * Append one line to today's _log/<date>.md.
+ * Uses fs.appendFile (single syscall, no read-modify-write race).
+ * This is server-internal — not exposed as an MCP tool.
+ */
+export async function appendToLog(line: string): Promise<void> {
+  const today = todayDateString();
+  const logDir = path.join(CONFIG.VAULT_PATH, CONFIG.LOG_FOLDER);
+  const logPath = path.join(logDir, `${today}.md`);
+
+  try {
+    await fs.mkdir(logDir, { recursive: true });
+    const timestamp = new Date().toISOString().substring(11, 16) + 'Z'; // HH:MMZ
+    await fs.appendFile(logPath, `${timestamp} — ${line}\n`, 'utf-8');
+  } catch (err) {
+    logger.warn('Failed to append to log', { error: String(err) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Process liveness check (for wm-<PID>.sqlite orphan detection)
+// ---------------------------------------------------------------------------
+
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

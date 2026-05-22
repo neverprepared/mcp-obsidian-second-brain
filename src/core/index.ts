@@ -14,8 +14,7 @@ import { readRenameJournal, deleteRenameJournal } from '../vault/rename-journal.
 import { ensureWorkingDb, cleanupSnapshot } from '../working/db.js';
 import { logger } from '../shared/logger.js';
 
-export { CONFIG, DEFAULT_TTL_DAYS, paraFolderFromCategory } from '../config.js';
-export type { ParaFolder } from '../config.js';
+export { CONFIG, DEFAULT_TTL_DAYS } from '../config.js';
 
 export { handleStore } from '../tools/store.js';
 export { handleRecall } from '../tools/recall.js';

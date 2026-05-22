@@ -4,6 +4,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { main } from '../../src/cli.js';
 import { CONFIG } from '../../src/config.js';
+import { initWorkingDb } from '../../src/working/db.js';
+import { cancelClusterRebuild, waitForClusterRebuild } from '../../src/vault/cluster-index.js';
 
 /**
  * CLI integration tests.
@@ -27,11 +29,12 @@ describe('cli', () => {
     // @ts-expect-error - mutating config for test
     CONFIG.VAULT_PATH = tmpDir;
 
-    for (const folder of CONFIG.PARA_FOLDERS) {
-      await fs.mkdir(path.join(tmpDir, folder), { recursive: true });
-    }
+    await fs.mkdir(path.join(tmpDir, CONFIG.MEMORY_FOLDER), { recursive: true });
     await fs.mkdir(path.join(tmpDir, CONFIG.DAILY_FOLDER), { recursive: true });
     await fs.mkdir(path.join(tmpDir, CONFIG.INDEX_FOLDER), { recursive: true });
+
+    // Reset working DB so each test starts with a clean slate
+    initWorkingDb();
 
     stdoutCapture = [];
     stderrCapture = [];
@@ -48,9 +51,19 @@ describe('cli', () => {
   afterEach(async () => {
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+    await waitForClusterRebuild();
+    cancelClusterRebuild();
     // @ts-expect-error - restoring config
     CONFIG.VAULT_PATH = originalVaultPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw err;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
   });
 
   const stdout = (): string => stdoutCapture.join('');
@@ -87,15 +100,15 @@ describe('cli', () => {
       'store',
       '--title', 'CLI Round Trip',
       '--content', 'A memory created via the CLI.',
-      '--para', 'resources',
+      '--lifecycle-status', 'reference',
       '--tags', 'cli,roundtrip',
     ]);
     expect(storeCode).toBe(0);
     expect(stdout()).toContain('CLI Round Trip');
-    expect(stdout()).toContain('Resources/');
+    expect(stdout()).toContain('Memory/');
 
     // File written
-    const files = await fs.readdir(path.join(tmpDir, 'Resources'));
+    const files = await fs.readdir(path.join(tmpDir, 'Memory'));
     expect(files).toContain('cli-round-trip.md');
 
     // Reset capture for next call

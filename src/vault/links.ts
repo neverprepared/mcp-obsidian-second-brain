@@ -41,7 +41,7 @@ export async function discoverLinks(slug: string): Promise<LinkGraph> {
     const relatedSet = new Set(entry.frontmatter.related);
     try {
       const raw = await readMemoryFile(entry.filePath);
-      const parsed = parseMemoryFile(raw);
+      const parsed = parseMemoryFile(raw, entry.filePath);
       for (const link of extractWikiLinks(parsed.content)) {
         relatedSet.add(link);
       }
@@ -80,26 +80,28 @@ export function addRelatedLink(content: string, targetSlug: string): string {
 }
 
 /**
- * Find existing memories that share >= MIN_SHARED_TAGS tags with the given tag set.
- * Returns their slugs, sorted by number of shared tags (most related first).
+ * Find existing memories with Jaccard tag similarity >= MIN_TAG_JACCARD.
+ * Returns their slugs, sorted by Jaccard score descending (most related first).
  */
 export function findRelatedByTags(tags: string[], excludeSlug?: string): string[] {
   const index = getIndex();
   const tagSet = new Set(tags.map((t) => t.toLowerCase()));
 
-  const matches: Array<{ slug: string; shared: number }> = [];
+  const matches: Array<{ slug: string; jaccard: number }> = [];
 
   for (const entry of index.values()) {
     if (entry.slug === excludeSlug) continue;
-    const entryTags = entry.frontmatter.tags.map((t) => t.toLowerCase());
-    const shared = entryTags.filter((t) => tagSet.has(t)).length;
-    if (shared >= CONFIG.MIN_SHARED_TAGS) {
-      matches.push({ slug: entry.slug, shared });
+    const entryTags = new Set(entry.frontmatter.tags.map((t) => t.toLowerCase()));
+    const intersection = [...tagSet].filter((t) => entryTags.has(t)).length;
+    const union = new Set([...tagSet, ...entryTags]).size;
+    const jaccard = union === 0 ? 0 : intersection / union;
+    if (jaccard >= CONFIG.MIN_TAG_JACCARD) {
+      matches.push({ slug: entry.slug, jaccard });
     }
   }
 
   return matches
-    .sort((a, b) => b.shared - a.shared)
+    .sort((a, b) => b.jaccard - a.jaccard)
     .map((m) => m.slug);
 }
 
@@ -113,6 +115,7 @@ export interface AutoLinkResult {
  * - Adds [[wiki-links]] from the new memory to related ones
  * - Adds backlinks from related memories back to the new one
  * - Updates frontmatter `related` arrays on both sides
+ * - Applies per-store cap (MAX_AUTO_LINKS_PER_STORE) and per-atom cap (MAX_AUTO_LINKS_PER_ATOM)
  *
  * Returns { linked, failed } — errors are logged but don't fail the store.
  */
@@ -125,17 +128,17 @@ export async function autoLinkRelated(
   const failed: string[] = [];
 
   try {
-    const relatedSlugs = findRelatedByTags(tags, newSlug);
+    const allRelated = findRelatedByTags(tags, newSlug);
+    // Per-store cap: new atom gets at most MAX_AUTO_LINKS_PER_STORE outgoing links
+    const relatedSlugs = allRelated.slice(0, CONFIG.MAX_AUTO_LINKS_PER_STORE);
     if (relatedSlugs.length === 0) return { linked: [], failed: [] };
 
     // 1. Update the new memory file: add outgoing links
     const newRaw = await readMemoryFile(newFilePath);
-    const newParsed = parseMemoryFile(newRaw);
+    const newParsed = parseMemoryFile(newRaw, newFilePath);
 
     const existingRelated = new Set(newParsed.frontmatter.related);
-    for (const slug of relatedSlugs) {
-      existingRelated.add(slug);
-    }
+    for (const slug of relatedSlugs) existingRelated.add(slug);
     newParsed.frontmatter.related = [...existingRelated];
 
     let newContent = newParsed.content;
@@ -144,28 +147,29 @@ export async function autoLinkRelated(
     }
 
     await writeMemoryFile(newFilePath, serializeMemory(newParsed.frontmatter, newContent));
-
-    // Re-index the new memory so FTS and vectors reflect the appended Related section.
     indexEntry(
       newParsed.frontmatter.id,
       { frontmatter: newParsed.frontmatter, filePath: newFilePath, slug: newSlug },
       newContent,
     );
 
-    // 2. Update each related memory: add backlink to the new memory (parallel writes)
+    // 2. Update each related memory: add backlink (with per-atom cap)
     await Promise.all(relatedSlugs.map(async (slug) => {
       try {
         const entry = findBySlug(slug);
-        if (!entry) {
-          failed.push(slug);
+        if (!entry) { failed.push(slug); return; }
+
+        const raw = await readMemoryFile(entry.filePath);
+        const parsed = parseMemoryFile(raw, entry.filePath);
+
+        if (parsed.frontmatter.related.includes(newSlug)) {
+          linked.push(slug);
           return;
         }
 
-        const raw = await readMemoryFile(entry.filePath);
-        const parsed = parseMemoryFile(raw);
-
-        // Skip if already linked
-        if (parsed.frontmatter.related.includes(newSlug)) {
+        // Per-atom cap: don't add backlink if atom is already at max incoming links
+        if (parsed.frontmatter.related.length >= CONFIG.MAX_AUTO_LINKS_PER_ATOM) {
+          logger.debug('Skipping backlink — target atom at MAX_AUTO_LINKS_PER_ATOM', { slug, newSlug });
           linked.push(slug);
           return;
         }
@@ -174,7 +178,6 @@ export async function autoLinkRelated(
         const updatedContent = addRelatedLink(parsed.content, newSlug);
 
         await writeMemoryFile(entry.filePath, serializeMemory(parsed.frontmatter, updatedContent));
-
         indexEntry(
           parsed.frontmatter.id,
           { frontmatter: parsed.frontmatter, filePath: entry.filePath, slug: entry.slug },
@@ -274,7 +277,7 @@ export async function removeBacklinks(deletedSlug: string): Promise<RemoveBackli
 
     try {
       const raw = await readMemoryFile(entry.filePath);
-      const parsed = parseMemoryFile(raw);
+      const parsed = parseMemoryFile(raw, entry.filePath);
 
       // Remove from related array
       parsed.frontmatter.related = parsed.frontmatter.related.filter((s) => s !== deletedSlug);
@@ -313,7 +316,7 @@ export async function renameSlugReferences(oldSlug: string, newSlug: string): Pr
   for (const entry of index.values()) {
     try {
       const raw = await readMemoryFile(entry.filePath);
-      const parsed = parseMemoryFile(raw);
+      const parsed = parseMemoryFile(raw, entry.filePath);
 
       const hasRelatedRef = parsed.frontmatter.related.includes(oldSlug);
       const hasBodyRef = parsed.content.includes(`[[${oldSlug}]]`);

@@ -90,7 +90,7 @@ async function createProject(input: z.infer<typeof ProjectInputSchema>): Promise
   return handleStore({
     title: input.title,
     content: projectContent,
-    para: 'projects',
+    lifecycle_status: 'active',
     tags: ['project', ...input.tags],
     confidence: 'high',
     source: 'conversation',
@@ -119,7 +119,7 @@ async function completeProject(input: z.infer<typeof ProjectInputSchema>): Promi
 async function listProjects(): Promise<CallToolResult> {
   const index = getIndex();
   const projects = Array.from(index.values())
-    .filter((e) => e.frontmatter.para === 'projects' && e.frontmatter.status !== 'archived');
+    .filter((e) => e.frontmatter.tags.includes('project') && e.frontmatter.status !== 'archived');
 
   if (projects.length === 0) {
     return {
@@ -139,7 +139,7 @@ async function listProjects(): Promise<CallToolResult> {
     const fm = e.frontmatter;
     const deadline = fm.deadline || 'no deadline';
     const overdue = fm.deadline && fm.deadline < today ? ' ⚠ OVERDUE' : '';
-    const stale = isStale(fm.updated, fm.ttl_days, fm.para) ? ' [STALE]' : '';
+    const stale = isStale(fm.updated, fm.ttl_days, fm.lifecycle_status) ? ' [STALE]' : '';
     return `- **${fm.title}**${overdue}${stale}\n  Deadline: ${deadline} | Tags: ${fm.tags.join(', ') || 'none'}\n  ID: ${fm.id}`;
   });
 

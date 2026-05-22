@@ -53,7 +53,7 @@ export async function handleCleanup(args: unknown): Promise<CallToolResult> {
     if (input.target === 'stale') {
       candidates = [...index.values()].filter(
         (e) =>
-          isStale(e.frontmatter.updated, e.frontmatter.ttl_days, e.frontmatter.para) &&
+          isStale(e.frontmatter.updated, e.frontmatter.ttl_days, e.frontmatter.lifecycle_status) &&
           e.frontmatter.status !== 'archived'
       );
     } else if (input.target === 'archived') {
@@ -78,7 +78,8 @@ export async function handleCleanup(args: unknown): Promise<CallToolResult> {
 
       const lines = candidates.map((e) => {
         const fm = e.frontmatter;
-        return `- **${fm.title}** [${fm.para}/${fm.status}] — ID: ${fm.id}`;
+        const lc = fm.lifecycle_status ?? fm.para ?? 'unknown';
+        return `- **${fm.title}** [${lc}/${fm.status}] — ID: ${fm.id}`;
       });
 
       const prefix = input.dry_run && input.action !== 'list'

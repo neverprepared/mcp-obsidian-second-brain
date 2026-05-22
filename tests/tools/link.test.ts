@@ -17,7 +17,7 @@ describe('memory_link tool', () => {
   });
 
   async function store(title: string) {
-    await handleStore({ title, content: 'Content.', para: 'resources', tags: [] });
+    await handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [] });
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 

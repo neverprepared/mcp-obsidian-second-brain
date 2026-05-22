@@ -6,7 +6,7 @@ describe('frontmatter', () => {
   const sampleFrontmatter: Frontmatter = {
     id: 'mem_1712764800_test-memory',
     title: 'Test Memory',
-    para: 'resources',
+    lifecycle_status: 'reference',
     tags: ['test', 'example'],
     created: '2026-04-10T14:00:00.000Z',
     updated: '2026-04-10T14:00:00.000Z',
@@ -14,6 +14,9 @@ describe('frontmatter', () => {
     related: [],
     confidence: 'medium',
     status: 'active',
+    source_urls: [],
+    input_sources: [],
+    wiki_refs: [],
   };
 
   it('should serialize and parse a memory roundtrip', () => {
@@ -23,12 +26,12 @@ describe('frontmatter', () => {
 
     expect(parsed.frontmatter.id).toBe(sampleFrontmatter.id);
     expect(parsed.frontmatter.title).toBe(sampleFrontmatter.title);
-    expect(parsed.frontmatter.para).toBe(sampleFrontmatter.para);
+    expect(parsed.frontmatter.lifecycle_status).toBe(sampleFrontmatter.lifecycle_status);
     expect(parsed.frontmatter.tags).toEqual(sampleFrontmatter.tags);
     expect(parsed.content).toBe(content);
   });
 
-  it('should parse valid frontmatter', () => {
+  it('should parse valid frontmatter with legacy para field', () => {
     const raw = `---
 id: mem_123_hello
 title: Hello World
