@@ -334,14 +334,18 @@ export async function searchMemories(options: SearchOptions): Promise<SearchResu
 }
 
 async function hybridSearch(options: SearchOptions, query: string): Promise<SearchResult[]> {
+  const t0 = performance.now();
   const queryEmbedding = await embedText(query);
+  const tEmbed = performance.now();
   if (!queryEmbedding) return keywordSearch(options);
 
   const WINDOW = Math.max(options.limit * 10, 50);
   const RRF_K = 10;
 
   const vectorHits = searchVectors(queryEmbedding, WINDOW);
+  const tVector = performance.now();
   const ftsHits = isFtsReady() ? searchFts(query, WINDOW) : [];
+  const tFts = performance.now();
 
   // Build rank maps (1-indexed)
   const vectorRank = new Map(vectorHits.map((r, i) => [r.id, i + 1]));
@@ -385,6 +389,17 @@ async function hybridSearch(options: SearchOptions, query: string): Promise<Sear
     const aUpdated = a.resultKind === 'atom' ? a.entry!.frontmatter.updated : a.wikiEntry!.updated;
     const bUpdated = b.resultKind === 'atom' ? b.entry!.frontmatter.updated : b.wikiEntry!.updated;
     return bUpdated.localeCompare(aUpdated);
+  });
+
+  logger.debug('hybridSearch timing', {
+    query,
+    embedMs: Math.round(tEmbed - t0),
+    vectorMs: Math.round(tVector - tEmbed),
+    ftsMs: Math.round(tFts - tVector),
+    mergeMs: Math.round(performance.now() - tFts),
+    candidates: candidates.length,
+    vectorHits: vectorHits.length,
+    ftsHits: ftsHits.length,
   });
 
   return candidates.slice(0, options.limit);

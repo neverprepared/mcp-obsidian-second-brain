@@ -14,7 +14,7 @@ class Logger {
   };
 
   constructor() {
-    const envLevel = process.env['LOG_LEVEL']?.toLowerCase() as LogLevel | undefined;
+    const envLevel = (process.env['MCP_SB_LOG_LEVEL'] ?? process.env['LOG_LEVEL'])?.toLowerCase() as LogLevel | undefined;
     this.level = envLevel && envLevel in this.levels ? envLevel : 'info';
   }
 
