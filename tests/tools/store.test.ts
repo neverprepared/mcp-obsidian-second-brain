@@ -5,6 +5,7 @@ import os from 'node:os';
 import { handleStore } from '../../src/tools/store.js';
 import { buildIndex, getIndex } from '../../src/vault/search.js';
 import { CONFIG } from '../../src/config.js';
+import { cancelClusterRebuild, waitForClusterRebuild } from '../../src/vault/cluster-index.js';
 
 describe('memory_store tool', () => {
   let originalVaultPath: string;
@@ -16,35 +17,44 @@ describe('memory_store tool', () => {
     // @ts-expect-error - mutating config for test
     CONFIG.VAULT_PATH = tmpDir;
 
-    // Create PARA folders
-    for (const folder of CONFIG.PARA_FOLDERS) {
-      await fs.mkdir(path.join(tmpDir, folder), { recursive: true });
-    }
+    // Create layer folders
+    await fs.mkdir(path.join(tmpDir, CONFIG.MEMORY_FOLDER), { recursive: true });
     await fs.mkdir(path.join(tmpDir, CONFIG.DAILY_FOLDER), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, CONFIG.INDEX_FOLDER), { recursive: true });
 
     await buildIndex();
   });
 
   afterEach(async () => {
+    await waitForClusterRebuild();
+    cancelClusterRebuild();
     // @ts-expect-error - restoring config
     CONFIG.VAULT_PATH = originalVaultPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw err;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
   });
 
   it('should store a memory and return success', async () => {
     const result = await handleStore({
       title: 'Test Memory',
       content: 'This is a test.',
-      para: 'resources',
+      lifecycle_status: 'reference',
       tags: ['test'],
     });
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('Test Memory');
-    expect(result.content[0]!.text).toContain('Resources/');
+    expect(result.content[0]!.text).toContain('Memory/');
 
     // Verify file exists
-    const files = await fs.readdir(path.join(tmpDir, 'Resources'));
+    const files = await fs.readdir(path.join(tmpDir, 'Memory'));
     expect(files.length).toBe(1);
     expect(files[0]).toBe('test-memory.md');
 
@@ -57,15 +67,15 @@ describe('memory_store tool', () => {
     await handleStore({
       title: 'Duplicate',
       content: 'First.',
-      para: 'resources',
+      lifecycle_status: 'reference',
     });
     await handleStore({
       title: 'Duplicate',
       content: 'Second.',
-      para: 'resources',
+      lifecycle_status: 'reference',
     });
 
-    const files = await fs.readdir(path.join(tmpDir, 'Resources'));
+    const files = await fs.readdir(path.join(tmpDir, 'Memory'));
     expect(files.length).toBe(2);
     expect(files.sort()).toEqual(['duplicate-2.md', 'duplicate.md']);
   });
@@ -73,7 +83,7 @@ describe('memory_store tool', () => {
   it('should reject missing required fields', async () => {
     const result = await handleStore({
       title: 'No Content',
-      para: 'resources',
+      lifecycle_status: 'reference',
     });
 
     expect(result.isError).toBe(true);
@@ -83,7 +93,7 @@ describe('memory_store tool', () => {
     await handleStore({
       title: 'Daily Test',
       content: 'Content.',
-      para: 'areas',
+      lifecycle_status: 'active',
       tags: ['daily'],
     });
 

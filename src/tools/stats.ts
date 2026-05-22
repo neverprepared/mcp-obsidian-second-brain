@@ -18,7 +18,7 @@ const StatsInputSchema = z.object({
 export const statsToolDefinition = {
   name: 'memory_stats',
   description:
-    'Get vault health summary: counts by PARA category/status, stale/orphan counts, top tags. Optionally include vector index diagnostics and/or working memory session info via the "include" parameter.',
+    'Get vault health summary: counts by lifecycle status, stale/orphan counts, top tags. Optionally include vector index diagnostics and/or working memory session info via the "include" parameter.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -37,7 +37,7 @@ export async function handleStats(args: unknown): Promise<CallToolResult> {
     const include = new Set(input.include ?? []);
     const index = getIndex();
 
-    const byPara: Record<string, number> = { projects: 0, areas: 0, resources: 0, archives: 0 };
+    const byLifecycle: Record<string, number> = { active: 0, reference: 0, archive: 0 };
     const byStatus: Record<string, number> = { active: 0, stale: 0, archived: 0 };
     const tagFrequency = new Map<string, number>();
     let total = 0;
@@ -46,10 +46,11 @@ export async function handleStats(args: unknown): Promise<CallToolResult> {
     for (const entry of index.values()) {
       const fm = entry.frontmatter;
       total++;
-      byPara[fm.para] = (byPara[fm.para] ?? 0) + 1;
+      const lc = fm.lifecycle_status ?? 'reference';
+      byLifecycle[lc] = (byLifecycle[lc] ?? 0) + 1;
       byStatus[fm.status] = (byStatus[fm.status] ?? 0) + 1;
 
-      if (isStale(fm.updated, fm.ttl_days, fm.para)) {
+      if (isStale(fm.updated, fm.ttl_days, fm.lifecycle_status)) {
         staleCount++;
       }
 
@@ -88,11 +89,10 @@ export async function handleStats(args: unknown): Promise<CallToolResult> {
       ``,
       `**Total memories:** ${total}`,
       ``,
-      `### By PARA Category`,
-      `- Projects: ${byPara['projects'] ?? 0}`,
-      `- Areas: ${byPara['areas'] ?? 0}`,
-      `- Resources: ${byPara['resources'] ?? 0}`,
-      `- Archives: ${byPara['archives'] ?? 0}`,
+      `### By Lifecycle Status`,
+      `- Active: ${byLifecycle['active'] ?? 0}`,
+      `- Reference: ${byLifecycle['reference'] ?? 0}`,
+      `- Archive: ${byLifecycle['archive'] ?? 0}`,
       ``,
       `### By Status`,
       `- Active: ${byStatus['active'] ?? 0}`,

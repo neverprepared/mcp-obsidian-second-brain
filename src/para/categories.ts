@@ -1,8 +1,7 @@
-import type { ParaCategory } from '../schemas/frontmatter.js';
+import type { LifecycleStatus } from '../schemas/frontmatter.js';
 
-export const PARA_DESCRIPTIONS: Record<ParaCategory, string> = {
-  projects: 'Time-bound goals with deadlines',
-  areas: 'Ongoing areas of responsibility',
-  resources: 'Reference material and topics of interest',
-  archives: 'Completed or inactive items',
+export const LIFECYCLE_DESCRIPTIONS: Record<LifecycleStatus, string> = {
+  active: 'Time-bound or evolving content',
+  reference: 'Stable reference material',
+  archive: 'Completed or inactive items',
 };

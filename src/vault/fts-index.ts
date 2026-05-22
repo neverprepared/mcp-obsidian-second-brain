@@ -67,8 +67,8 @@ export function searchFts(query: string, limit: number): FtsResult[] {
   try {
     // Weighted BM25: title (10) > tags (5) > body (1) to preserve legacy ordering.
     const stmt = db.prepare(`
-      SELECT id, bm25(fts_memories, 10.0, 5.0, 1.0) as rank,
-        snippet(fts_memories, 3, '>>>', '<<<', '...', 32) as snippet
+      SELECT id, bm25(fts_memories, 4.0, 3.0, 1.0) as rank,
+        snippet(fts_memories, 3, '>>>', '<<<', '...', 64) as snippet
       FROM fts_memories
       WHERE fts_memories MATCH ?
       ORDER BY rank

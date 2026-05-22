@@ -65,7 +65,7 @@ describe('links with vault', () => {
   });
 
   async function store(title: string, overrides: Record<string, unknown> = {}) {
-    await handleStore({ title, content: 'Content.', para: 'resources', tags: [], ...overrides });
+    await handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [], ...overrides });
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!;
   }
 

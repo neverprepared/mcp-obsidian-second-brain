@@ -141,7 +141,7 @@ export async function handleTaskStart(args: unknown): Promise<CallToolResult> {
       }
     }
 
-    const seeded = await seedTaskFromVault(task_id, input.goal);
+    const { seeded, orphanedWarning } = await seedTaskFromVault(task_id, input.goal);
 
     logger.info('Task started', { task_id, goal: input.goal, seeded });
     writeSnapshot();
@@ -156,6 +156,7 @@ export async function handleTaskStart(args: unknown): Promise<CallToolResult> {
             input.constraints?.length ? `Constraints: ${input.constraints.join(', ')}` : null,
             input.plan?.length ? `Plan: ${input.plan.length} steps` : null,
             seeded > 0 ? `Seeded ${seeded} relevant memories from Obsidian vault` : 'No matching vault memories found',
+            orphanedWarning ?? null,
           ].filter(Boolean).join('\n'),
         },
       ],

@@ -4,11 +4,19 @@ import fsSync from 'node:fs';
 import { nowISO } from '../shared/utils.js';
 import { logger } from '../shared/logger.js';
 import { CONFIG } from '../config.js';
+import { isProcessAlive } from '../vault/filesystem.js';
 
 export type MemoryType = 'semantic' | 'episodic' | 'procedural';
 export type TaskStatus = 'active' | 'completed' | 'failed';
 export type StepStatus = 'pending' | 'active' | 'completed' | 'failed';
 export type Importance = 'low' | 'medium' | 'high';
+
+export interface OrphanedTask {
+  pid: number;
+  task_id: string;
+  goal: string;
+  status: string;
+}
 
 export interface Task {
   task_id: string;
@@ -64,10 +72,59 @@ export interface TaskState {
 
 let db: Database.Database | null = null;
 
-export function initWorkingDb(): void {
-  db = new Database(':memory:');
+function getWmDbPath(): string {
+  return path.join(CONFIG.VAULT_PATH, CONFIG.INDEX_FOLDER, `wm-${process.pid}.sqlite`);
+}
+
+/**
+ * Scan the _index/ directory for dead-PID shard files, collect orphaned active
+ * tasks from them, delete the shards, and return the list of orphaned tasks.
+ */
+function collectOrphanedTasks(): OrphanedTask[] {
+  const indexDir = path.join(CONFIG.VAULT_PATH, CONFIG.INDEX_FOLDER);
+  fsSync.mkdirSync(indexDir, { recursive: true });
+
+  const orphaned: OrphanedTask[] = [];
+  try {
+    const allFiles = fsSync.readdirSync(indexDir);
+    const shards = allFiles.filter((f) => /^wm-\d+\.sqlite$/.test(f));
+    for (const shard of shards) {
+      const match = shard.match(/^wm-(\d+)\.sqlite$/);
+      const pid = match ? parseInt(match[1]!, 10) : 0;
+      if (!pid || pid === process.pid) continue;
+      if (!isProcessAlive(pid)) {
+        try {
+          const shardDb = new Database(path.join(indexDir, shard));
+          const tasks = shardDb
+            .prepare("SELECT task_id, goal, status FROM tasks WHERE status = 'active'")
+            .all() as Array<{ task_id: string; goal: string; status: string }>;
+          for (const t of tasks) {
+            orphaned.push({ pid, task_id: t.task_id, goal: t.goal, status: t.status });
+          }
+          shardDb.close();
+          fsSync.unlinkSync(path.join(indexDir, shard));
+        } catch {
+          // Corrupt shard — skip
+        }
+      }
+    }
+  } catch {
+    // indexDir doesn't exist yet or unreadable
+  }
+  return orphaned;
+}
+
+export function initWorkingDb(): OrphanedTask[] {
+  const wmDbPath = getWmDbPath();
+  db = new Database(wmDbPath);
 
   db.exec(`
+    DROP TABLE IF EXISTS questions;
+    DROP TABLE IF EXISTS artifacts;
+    DROP TABLE IF EXISTS findings;
+    DROP TABLE IF EXISTS steps;
+    DROP TABLE IF EXISTS tasks;
+
     CREATE TABLE tasks (
       task_id    TEXT PRIMARY KEY,
       goal       TEXT NOT NULL,
@@ -117,7 +174,9 @@ export function initWorkingDb(): void {
     );
   `);
 
-  logger.info('Working memory SQLite initialized');
+  const orphaned = collectOrphanedTasks();
+  logger.info('Working memory SQLite initialized', { path: wmDbPath, orphaned: orphaned.length });
+  return orphaned;
 }
 
 /**
@@ -126,9 +185,9 @@ export function initWorkingDb(): void {
  * than once in a process. Tests that need a clean slate should call
  * initWorkingDb() directly.
  */
-export function ensureWorkingDb(): void {
-  if (db) return;
-  initWorkingDb();
+export function ensureWorkingDb(): OrphanedTask[] {
+  if (db) return [];
+  return initWorkingDb();
 }
 
 function requireDb(): Database.Database {

@@ -1,15 +1,15 @@
 import matter from 'gray-matter';
 import type { Frontmatter } from '../schemas/frontmatter.js';
-import { FrontmatterSchema } from '../schemas/frontmatter.js';
+import { FrontmatterSchema, normalizeFrontmatter } from '../schemas/frontmatter.js';
 
 export interface ParsedMemory {
   frontmatter: Frontmatter;
   content: string;
 }
 
-export function parseMemoryFile(raw: string): ParsedMemory {
+export function parseMemoryFile(raw: string, filePath?: string): ParsedMemory {
   const { data, content } = matter(raw);
-  const frontmatter = FrontmatterSchema.parse(data);
+  const frontmatter = normalizeFrontmatter(FrontmatterSchema.parse(data), filePath);
   return { frontmatter, content: content.trim() };
 }
 

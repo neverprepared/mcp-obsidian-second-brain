@@ -26,8 +26,16 @@ export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function isStale(updated: string, ttlDays: number | undefined, para: string): boolean {
-  const ttl = ttlDays ?? DEFAULT_TTL_DAYS[para] ?? 180;
+/**
+ * Returns true if the memory is past its TTL.
+ * Uses lifecycle_status for TTL lookup; falls back to legacy para for backward compat.
+ */
+export function isStale(
+  updated: string,
+  ttlDays: number | undefined,
+  lifecycleStatus?: string,
+): boolean {
+  const ttl = ttlDays ?? DEFAULT_TTL_DAYS[lifecycleStatus ?? 'reference'] ?? 180;
   const updatedMs = new Date(updated).getTime();
   const expiresMs = updatedMs + ttl * 86_400_000;
   return Date.now() > expiresMs;

@@ -5,27 +5,28 @@ import type { Frontmatter } from '../schemas/frontmatter.js';
 import { slugFromTitle, deduplicateSlug } from '../vault/naming.js';
 import { serializeMemory } from '../vault/frontmatter.js';
 import { memoryFilePath, writeMemoryFile, appendToDaily } from '../vault/filesystem.js';
-import { indexEntry } from '../vault/search.js';
+import { indexEntry, getIndex } from '../vault/search.js';
 import { buildRelatedSection, autoLinkRelated } from '../vault/links.js';
 import { generateMemoryId, nowISO } from '../shared/utils.js';
-import { paraFolderFromCategory, CONFIG } from '../config.js';
+import { CONFIG } from '../config.js';
+import { scheduleClusterRebuild } from '../vault/cluster-index.js';
 import { logger } from '../shared/logger.js';
 import path from 'node:path';
 
 export const storeToolDefinition = {
   name: 'memory_store',
   description:
-    'Store a new memory in the second brain vault. Creates a markdown file with frontmatter in the appropriate PARA category folder.',
+    'Store a new memory in the second brain vault. Creates a markdown file with frontmatter in the Memory folder.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       title: { type: 'string', description: 'Memory title (1-200 chars)' },
       content: { type: 'string', description: 'Memory content in markdown' },
-      para: {
+      lifecycle_status: {
         type: 'string',
-        enum: ['projects', 'areas', 'resources', 'archives'],
+        enum: ['active', 'reference', 'archive'],
         description:
-          'PARA category. "projects" for time-bound goals, "areas" for ongoing responsibilities, "resources" for reference/topics, "archives" for inactive.',
+          'Lifecycle status. "active" for time-bound/evolving content, "reference" for stable reference material, "archive" for inactive.',
       },
       tags: {
         type: 'array',
@@ -54,10 +55,10 @@ export const storeToolDefinition = {
       },
       ttl_days: {
         type: 'number',
-        description: 'Days before this memory is considered stale (defaults: projects=30, areas=90, resources=180, archives=365)',
+        description: 'Days before this memory is considered stale (defaults by lifecycle: active=90, reference=180, archive=365)',
       },
     },
-    required: ['title', 'content', 'para'],
+    required: ['title', 'content', 'lifecycle_status'],
   },
 };
 
@@ -65,8 +66,7 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
   try {
     const input = StoreInputSchema.parse(args);
     const baseSlug = slugFromTitle(input.title);
-    const folder = paraFolderFromCategory(input.para);
-    const dir = path.join(CONFIG.VAULT_PATH, folder);
+    const dir = path.join(CONFIG.VAULT_PATH, CONFIG.MEMORY_FOLDER);
     const slug = await deduplicateSlug(dir, baseSlug);
     const id = generateMemoryId(slug);
     const now = nowISO();
@@ -74,7 +74,7 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
     const frontmatter: Frontmatter = {
       id,
       title: input.title,
-      para: input.para,
+      lifecycle_status: input.lifecycle_status,
       tags: input.tags,
       created: now,
       updated: now,
@@ -84,6 +84,8 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
       status: 'active',
       last_accessed: now,
       source_urls: input.source_urls,
+      input_sources: [],
+      wiki_refs: [],
       ...(input.ttl_days !== undefined && { ttl_days: input.ttl_days }),
       ...(input.deadline !== undefined && { deadline: input.deadline }),
     };
@@ -94,11 +96,14 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
     }
 
     const fileContent = serializeMemory(frontmatter, body);
-    const filePath = memoryFilePath(input.para, slug);
+    const filePath = memoryFilePath(slug);
 
     await writeMemoryFile(filePath, fileContent);
 
     indexEntry(id, { frontmatter, filePath, slug }, body);
+
+    // Schedule cluster index rebuild after store
+    scheduleClusterRebuild(getIndex);
 
     // Auto-link to related memories by shared tags (bidirectional)
     const { linked: linkedSlugs, failed: failedLinks } = await autoLinkRelated(slug, filePath, input.tags);
@@ -107,9 +112,9 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
     }
 
     // Append to daily note
-    await appendToDaily(`- [[${slug}]] — ${input.title} (${input.para}, ${input.tags.join(', ')})`);
+    await appendToDaily(`- [[${slug}]] — ${input.title} (${input.lifecycle_status}, ${input.tags.join(', ')})`);
 
-    logger.info('Stored memory', { id, slug, para: input.para, linkedCount: linkedSlugs.length });
+    logger.info('Stored memory', { id, slug, lifecycle_status: input.lifecycle_status, linkedCount: linkedSlugs.length });
 
     const linkedInfo = linkedSlugs.length > 0
       ? `\nLinked to: ${linkedSlugs.length} related memories`
@@ -119,7 +124,7 @@ export async function handleStore(args: unknown): Promise<CallToolResult> {
       content: [
         {
           type: 'text',
-          text: `Stored memory: "${input.title}"\nID: ${id}\nPath: ${folder}/${slug}.md\nTags: ${input.tags.join(', ') || 'none'}${linkedInfo}`,
+          text: `Stored memory: "${input.title}"\nID: ${id}\nPath: ${CONFIG.MEMORY_FOLDER}/${slug}.md\nTags: ${input.tags.join(', ') || 'none'}${linkedInfo}`,
         },
       ],
     };

@@ -18,7 +18,7 @@ describe('archive via memory_update', () => {
   });
 
   async function storeAndGetId(title = 'Archive Me') {
-    await handleStore({ title, content: 'Content.', para: 'resources', tags: [] });
+    await handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: [] });
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 

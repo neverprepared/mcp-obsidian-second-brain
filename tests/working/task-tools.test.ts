@@ -6,6 +6,7 @@ import { initWorkingDb } from '../../src/working/db.js';
 import { handleTaskStart, handleTaskUpdate, handleTaskComplete, handleTaskGet } from '../../src/tools/task.js';
 import { buildIndex } from '../../src/vault/search.js';
 import { CONFIG } from '../../src/config.js';
+import { cancelClusterRebuild, waitForClusterRebuild } from '../../src/vault/cluster-index.js';
 
 let tmpDir: string;
 let originalVaultPath: string;
@@ -18,17 +19,26 @@ beforeEach(async () => {
   // @ts-expect-error - mutating config for test
   CONFIG.VAULT_PATH = tmpDir;
 
-  for (const folder of CONFIG.PARA_FOLDERS) {
-    await fs.mkdir(path.join(tmpDir, folder), { recursive: true });
-  }
+  await fs.mkdir(path.join(tmpDir, CONFIG.MEMORY_FOLDER), { recursive: true });
   await fs.mkdir(path.join(tmpDir, CONFIG.DAILY_FOLDER), { recursive: true });
+  await fs.mkdir(path.join(tmpDir, CONFIG.INDEX_FOLDER), { recursive: true });
   await buildIndex();
 });
 
 afterEach(async () => {
+  await waitForClusterRebuild();
+  cancelClusterRebuild();
   // @ts-expect-error - restoring config
   CONFIG.VAULT_PATH = originalVaultPath;
-  await fs.rm(tmpDir, { recursive: true, force: true });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw err;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
 });
 
 describe('task_start', () => {
@@ -62,7 +72,7 @@ describe('task_start', () => {
     await handleStore({
       title: 'Deployment checklist',
       content: 'Run migrations before deploying',
-      para: 'resources',
+      lifecycle_status: 'reference',
       tags: ['deploy', 'checklist'],
     });
 

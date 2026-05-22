@@ -19,10 +19,10 @@ export const timelineToolDefinition = {
         enum: ['created', 'updated', 'accessed'],
         description: 'Which timestamp to use for ordering (default: updated)',
       },
-      para: {
+      lifecycle_status: {
         type: 'string',
-        enum: ['projects', 'areas', 'resources', 'archives'],
-        description: 'Filter to a specific PARA category',
+        enum: ['active', 'reference', 'archive'],
+        description: 'Filter to a specific lifecycle status',
       },
       tags: {
         type: 'array',
@@ -43,7 +43,7 @@ export const timelineToolDefinition = {
 interface TimelineEntry {
   id: string;
   title: string;
-  para: string;
+  lifecycle: string;
   timestamp: string;
   tags: string[];
   stale: boolean;
@@ -58,8 +58,8 @@ export async function handleTimeline(args: unknown): Promise<CallToolResult> {
     for (const entry of index.values()) {
       const fm = entry.frontmatter;
 
-      // PARA filter
-      if (input.para && fm.para !== input.para) continue;
+      // Lifecycle status filter
+      if (input.lifecycle_status && fm.lifecycle_status !== input.lifecycle_status) continue;
 
       // Tag filter (OR mode)
       if (input.tags && input.tags.length > 0) {
@@ -78,10 +78,10 @@ export async function handleTimeline(args: unknown): Promise<CallToolResult> {
       entries.push({
         id: fm.id,
         title: fm.title,
-        para: fm.para,
+        lifecycle: fm.lifecycle_status ?? fm.para ?? 'unknown',
         timestamp,
         tags: fm.tags,
-        stale: isStale(fm.updated, fm.ttl_days, fm.para),
+        stale: isStale(fm.updated, fm.ttl_days, fm.lifecycle_status),
       });
     }
 
@@ -132,7 +132,7 @@ function formatFlat(entries: TimelineEntry[], _activity: string): string {
       const time = e.timestamp.slice(11, 16) || '';
       const staleTag = e.stale ? ' [stale]' : '';
       const tags = e.tags.length > 0 ? ` (${e.tags.join(', ')})` : '';
-      return `${date} ${time} | ${e.para} | ${e.title}${tags}${staleTag}`;
+      return `${date} ${time} | ${e.lifecycle} | ${e.title}${tags}${staleTag}`;
     })
     .join('\n');
 }
@@ -157,7 +157,7 @@ function formatGrouped(entries: TimelineEntry[], _activity: string, groupBy: 'da
       const time = e.timestamp.slice(11, 16) || '';
       const staleTag = e.stale ? ' [stale]' : '';
       const tags = e.tags.length > 0 ? ` (${e.tags.join(', ')})` : '';
-      lines.push(`- ${time ? time + ' ' : ''}[${e.para}] ${e.title}${tags}${staleTag}`);
+      lines.push(`- ${time ? time + ' ' : ''}[${e.lifecycle}] ${e.title}${tags}${staleTag}`);
     }
   }
 

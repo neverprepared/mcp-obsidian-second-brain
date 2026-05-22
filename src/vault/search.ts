@@ -1,4 +1,4 @@
-import type { Frontmatter, ParaCategory, Status } from '../schemas/frontmatter.js';
+import type { Frontmatter, LifecycleStatus, Status } from '../schemas/frontmatter.js';
 import { listAllMemoryFiles, readMemoryFile, writeMemoryFile } from './filesystem.js';
 import { parseMemoryFile, serializeMemory } from './frontmatter.js';
 import { nowISO, isStale } from '../shared/utils.js';
@@ -136,7 +136,7 @@ export interface SearchOptions extends DateFilters {
   tags?: string[];
   tag_mode?: 'and' | 'or';
   exclude_tags?: string[];
-  para?: ParaCategory;
+  lifecycle_status?: LifecycleStatus;
   status?: Status;
   freshness?: 'all' | 'fresh' | 'stale';
   sort_by?: 'relevance' | 'created' | 'updated' | 'title';
@@ -155,7 +155,7 @@ export interface SearchResult {
 export function passesFilters(entry: IndexEntry, options: Omit<SearchOptions, 'query' | 'limit'>): boolean {
   const fm = entry.frontmatter;
 
-  if (options.para && fm.para !== options.para) return false;
+  if (options.lifecycle_status && fm.lifecycle_status !== options.lifecycle_status) return false;
   if (options.status && fm.status !== options.status) return false;
 
   if (options.tags && options.tags.length > 0) {
@@ -176,7 +176,7 @@ export function passesFilters(entry: IndexEntry, options: Omit<SearchOptions, 'q
     if (excludeLower.some((t) => entryTagsLower.includes(t))) return false;
   }
 
-  const entryStale = isStale(fm.updated, fm.ttl_days, fm.para);
+  const entryStale = isStale(fm.updated, fm.ttl_days, fm.lifecycle_status);
   if (options.freshness && options.freshness !== 'all') {
     if (options.freshness === 'fresh' && entryStale) return false;
     if (options.freshness === 'stale' && !entryStale) return false;
@@ -243,56 +243,40 @@ async function hybridSearch(options: SearchOptions, query: string): Promise<Sear
   const queryEmbedding = await embedText(query);
   if (!queryEmbedding) return keywordSearch(options);
 
-  const vectorHits = searchVectors(queryEmbedding, Math.min(options.limit * 5, 200));
-  const vectorMap = new Map(vectorHits.map((r) => [r.id, r.distance]));
+  const WINDOW = Math.max(options.limit * 10, 50);
+  const RRF_K = 10;
 
-  // Use FTS5 for keyword scoring when available
-  const ftsHits = isFtsReady() ? searchFts(query, options.limit * 5) : [];
-  const ftsMap = new Map(ftsHits.map((r) => [r.id, { rank: r.rank, snippet: r.snippet }]));
+  const vectorHits = searchVectors(queryEmbedding, WINDOW);
+  const ftsHits = isFtsReady() ? searchFts(query, WINDOW) : [];
+
+  // Build rank maps (1-indexed)
+  const vectorRank = new Map(vectorHits.map((r, i) => [r.id, i + 1]));
+  const ftsRank = new Map(ftsHits.map((r, i) => [r.id, i + 1]));
+  const ftsSnippet = new Map(ftsHits.map((r) => [r.id, r.snippet]));
+
+  // Collect all candidate IDs from both rankers
+  const candidateIds = new Set<string>([
+    ...vectorHits.map((r) => r.id),
+    ...ftsHits.map((r) => r.id),
+  ]);
 
   const candidates: SearchResult[] = [];
 
-  for (const entry of memoryIndex.values()) {
+  for (const id of candidateIds) {
+    const entry = memoryIndex.get(id);
+    if (!entry) continue;
     if (!passesFilters(entry, options)) continue;
 
-    const id = entry.frontmatter.id;
-    const distance = vectorMap.get(id);
-    const ftsHit = ftsMap.get(id);
+    const vr = vectorRank.get(id);
+    const fr = ftsRank.get(id);
 
-    // Fall back to legacy scoring if FTS unavailable
-    let rawKey: number;
-    let snippet: string | undefined;
-    if (ftsHit) {
-      rawKey = ftsHit.rank;
-      snippet = ftsHit.snippet || undefined;
-    } else if (ftsHits.length === 0) {
-      // No FTS available, use legacy scorer
-      const legacy = scoreKeyword(entry, query);
-      rawKey = legacy.score;
-      snippet = legacy.snippet;
-    } else {
-      // FTS available but this entry didn't match
-      rawKey = 0;
-    }
+    let rrf = 0;
+    if (vr) rrf += 1 / (RRF_K + vr);
+    if (fr) rrf += 1 / (RRF_K + fr);
 
-    if (rawKey === 0 && distance === undefined) continue;
-
-    const vectorSim = distance !== undefined ? Math.max(0, 1 - distance) : 0;
-    // Normalize keyword score: FTS rank can vary widely, cap at reasonable max
-    const MAX_KEYWORD = ftsHits.length > 0 ? Math.max(1, ...ftsHits.map((h) => h.rank)) : 16;
-    const normKey = rawKey / MAX_KEYWORD;
-
-    let hybridScore: number;
-    if (distance !== undefined && rawKey > 0) {
-      hybridScore = 0.6 * vectorSim + 0.4 * normKey;
-    } else if (distance !== undefined) {
-      hybridScore = 0.6 * vectorSim;
-    } else {
-      hybridScore = 0.4 * normKey;
-    }
-
-    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
-    candidates.push({ entry, score: Math.round(hybridScore * 1000) / 1000, snippet, stale });
+    const snippet = ftsSnippet.get(id) || undefined;
+    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
+    candidates.push({ entry, score: Math.round(rrf * 10000) / 10000, snippet, stale });
   }
 
   candidates.sort((a, b) => {
@@ -315,7 +299,7 @@ function keywordSearch(options: SearchOptions): SearchResult[] {
   for (const entry of memoryIndex.values()) {
     if (!passesFilters(entry, options)) continue;
 
-    const entryStale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
+    const entryStale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
     let score = 0;
     let snippet: string | undefined;
 
@@ -353,7 +337,7 @@ function ftsKeywordSearch(options: SearchOptions, query: string): SearchResult[]
     if (!entry) continue;
     if (!passesFilters(entry, options)) continue;
 
-    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.para);
+    const stale = isStale(entry.frontmatter.updated, entry.frontmatter.ttl_days, entry.frontmatter.lifecycle_status);
     results.push({
       entry,
       score: hit.rank,

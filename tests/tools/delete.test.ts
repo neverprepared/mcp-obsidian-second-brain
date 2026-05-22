@@ -20,7 +20,7 @@ describe('memory_delete tool', () => {
   });
 
   async function storeAndGetId(title = 'To Delete', overrides: Record<string, unknown> = {}) {
-    await handleStore({ title, content: 'Content.', para: 'resources', tags: ['tag-a'], ...overrides });
+    await handleStore({ title, content: 'Content.', lifecycle_status: 'reference', tags: ['tag-a'], ...overrides });
     return [...getIndex().values()].find((e) => e.frontmatter.title === title)!.frontmatter.id;
   }
 

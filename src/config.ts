@@ -3,45 +3,46 @@ import path from 'node:path';
 export const CONFIG = {
   VAULT_PATH: process.env['OBSIDIAN_VAULT_PATH']
     || path.join(process.env['HOME'] || '', 'workspaces/profiles/personal/obsidian/vaults/memory'),
-  PARA_FOLDERS: ['Projects', 'Areas', 'Resources', 'Archives'] as const,
-  LIBRARY_FOLDER: 'Library',
-  LIBRARY_SUBFOLDERS: ['HowTos', 'Runbooks', 'Articles', 'References', 'Scratch'] as const,
-  LIBRARY_ATTACHMENTS_FOLDER: '_attachments',
+  // Layer folders
+  MEMORY_FOLDER: 'Memory',
+  INPUT_FOLDER: 'Input',
+  INPUT_SUBFOLDERS: ['articles', 'docs', 'transcripts', 'notes'] as const,
+  WIKI_FOLDER: 'Wiki',
+  WIKI_SUBFOLDERS: ['HowTos', 'Runbooks', 'References', 'Scratch'] as const,
+  OUTPUT_FOLDER: 'Output',
+  OUTPUT_SUBFOLDERS: ['articles', 'reports', 'decks'] as const,
+  // System folders
   DAILY_FOLDER: '_daily',
   INDEX_FOLDER: '_index',
   TEMPLATE_FOLDER: '_templates',
+  LOG_FOLDER: '_log',
+  // Index file name used at each layer root and subfolder
+  INDEX_FILE: '_index.md',
+  // Limits
   MAX_TITLE_LENGTH: 200,
   MAX_SLUG_LENGTH: 60,
   DEFAULT_SEARCH_LIMIT: 10,
   MAX_SEARCH_LIMIT: 50,
   DEFAULT_LIST_LIMIT: 20,
   MAX_LIST_LIMIT: 100,
-  MIN_SHARED_TAGS: parseInt(process.env['MIN_SHARED_TAGS'] || '2', 10),
+  // Auto-linking
+  MIN_TAG_JACCARD: 0.4,
+  MAX_AUTO_LINKS_PER_STORE: 10,
+  MAX_AUTO_LINKS_PER_ATOM: 25,
+  // Embeddings
   OLLAMA_BASE_URL: process.env['OLLAMA_BASE_URL'] || 'http://localhost:11434',
   EMBEDDING_MODEL: process.env['EMBEDDING_MODEL'] || 'nomic-embed-text',
   EMBEDDING_DIMS: parseInt(process.env['EMBEDDING_DIMS'] || '768', 10),
   EMBEDDING_BATCH_SIZE: parseInt(process.env['EMBEDDING_BATCH_SIZE'] || '50', 10),
 } as const;
 
+/** Default TTL by lifecycle status (days). Used when ttl_days not set on atom. */
 export const DEFAULT_TTL_DAYS: Record<string, number> = {
-  projects: 30,
-  areas: 90,
-  resources: 180,
-  archives: 365,
+  active: 90,
+  reference: 180,
+  archive: 365,
 };
 
-export type ParaFolder = typeof CONFIG.PARA_FOLDERS[number];
-
-export function paraFolderFromCategory(category: string): ParaFolder {
-  const map: Record<string, ParaFolder> = {
-    projects: 'Projects',
-    areas: 'Areas',
-    resources: 'Resources',
-    archives: 'Archives',
-  };
-  const folder = map[category];
-  if (!folder) {
-    throw new Error(`Invalid PARA category: ${category}`);
-  }
-  return folder;
+export function memoryFolderPath(): string {
+  return path.join(CONFIG.VAULT_PATH, CONFIG.MEMORY_FOLDER);
 }

@@ -27,10 +27,10 @@ export const searchToolDefinition = {
         items: { type: 'string' },
         description: 'Exclude memories with any of these tags',
       },
-      para: {
+      lifecycle_status: {
         type: 'string',
-        enum: ['projects', 'areas', 'resources', 'archives'],
-        description: 'Filter by PARA category',
+        enum: ['active', 'reference', 'archive'],
+        description: 'Filter by lifecycle status',
       },
       status: {
         type: 'string',
@@ -79,7 +79,7 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
       tags: input.tags,
       tag_mode: input.tag_mode,
       exclude_tags: input.exclude_tags,
-      para: input.para,
+      lifecycle_status: input.lifecycle_status,
       status: effectiveStatus,
       freshness: input.freshness,
       limit: excludeArchived ? input.limit * 2 : input.limit, // over-fetch to filter archived
@@ -113,7 +113,8 @@ export async function handleSearch(args: unknown): Promise<CallToolResult> {
     const lines = filtered.map((r, i) => {
       const fm = r.entry.frontmatter;
       const freshness = r.stale ? 'STALE' : 'Fresh';
-      let line = `${i + 1}. **${fm.title}** (${fm.para}) [${freshness}]`;
+      const lifecycle = fm.lifecycle_status ?? fm.para ?? 'unknown';
+      let line = `${i + 1}. **${fm.title}** (${lifecycle}) [${freshness}]`;
       line += `\n   ID: ${fm.id}`;
       line += `\n   Tags: ${fm.tags.join(', ') || 'none'} | Status: ${fm.status} | Score: ${r.score}`;
       if (r.snippet) {
