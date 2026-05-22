@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.15.0...v0.16.0) (2026-05-22)
+
+
+### Features
+
+* wiki search indexing, perf metrics, MCP_SB_LOG_LEVEL ([#31](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/31)) ([c280c74](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/c280c741fe90aa891c391fd1bbdb2dc40b5388c0))
+
 ## [0.15.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.14.0...v0.15.0) (2026-05-22)
 
 
