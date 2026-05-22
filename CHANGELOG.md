@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.13.0...v0.14.0) (2026-05-22)
+
+
+### Features
+
+* three-layer architecture (Input/Memory/Wiki/Output) replaces PARA ([#27](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/27)) ([d5dee87](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/d5dee87f61208cc25fc099827a8baa92160dac8b))
+
+
+### Bug Fixes
+
+* **tests:** init working db after vault path is set to tmpDir ([0386ae6](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/0386ae62e73074b78afb5110ae7281f6c470f7e8))
+* **tests:** set tmpDir vault path before initWorkingDb in db.test.ts ([14e91d0](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/14e91d05f49acb17e3c93ee6f43a7ff4090b3d2f))
+
 ## [0.13.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.12.0...v0.13.0) (2026-05-17)
 
 
