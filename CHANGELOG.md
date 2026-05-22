@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.16.1...v0.16.2) (2026-05-22)
+
+
+### Bug Fixes
+
+* read version from package.json instead of hardcoded 0.1.0 ([25a1232](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/25a123206b8c0b47c8e67d282104012320329c0a))
+
 ## [0.16.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.16.0...v0.16.1) (2026-05-22)
 
 
