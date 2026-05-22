@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.14.0...v0.15.0) (2026-05-22)
+
+
+### Features
+
+* index Wiki pages in search alongside Memory atoms ([#29](https://github.com/neverprepared/mcp-obsidian-second-brain/issues/29)) ([d4d7896](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/d4d7896385e398ed946c32e77aa67ba0ffcb9e77))
+
 ## [0.14.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.13.0...v0.14.0) (2026-05-22)
 
 
