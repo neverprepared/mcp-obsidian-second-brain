@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.16.0...v0.16.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* use JSON_SCHEMA to prevent js-yaml auto-parsing ISO dates as Date objects ([1f4eccb](https://github.com/neverprepared/mcp-obsidian-second-brain/commit/1f4eccb073730040da2b99c6698de21f29131fd0))
+
 ## [0.16.0](https://github.com/neverprepared/mcp-obsidian-second-brain/compare/v0.15.0...v0.16.0) (2026-05-22)
 
 
